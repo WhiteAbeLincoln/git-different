@@ -10,21 +10,22 @@ import (
 )
 
 type UIConfig struct {
+	Icons           string `yaml:"icons"` // "nerd-fonts-status" (default), "nerd-fonts-simple", "nerd-fonts-filetype", "nerd-fonts-full", "unicode", "ascii"
+	Pager           string `yaml:"pager"`
+	ExternalDiff    string `yaml:"externalDiff"`
+	FileTreeWidth   int    `yaml:"fileTreeWidth"`
+	SearchTreeWidth int    `yaml:"searchTreeWidth"`
 	HideHeader      bool   `yaml:"hideHeader"`
 	HideFooter      bool   `yaml:"hideFooter"`
 	ShowFileTree    bool   `yaml:"showFileTree"`
-	FileTreeWidth   int    `yaml:"fileTreeWidth"`
-	SearchTreeWidth int    `yaml:"searchTreeWidth"`
-	Icons           string `yaml:"icons"`          // "nerd-fonts-status" (default), "nerd-fonts-simple", "nerd-fonts-filetype", "nerd-fonts-full", "unicode", "ascii"
 	ColorFileNames  bool   `yaml:"colorFileNames"` // Color filenames by git status (default: true)
 	ShowDiffStats   bool   `yaml:"showDiffStats"`  // Show the amount of lines added / removed next to the file
-	SideBySide      bool   `yaml:"sideBySide"`     // Side-by-side diff view (default: true)
 }
 
 type WatchConfig struct {
-	Enabled  bool
 	Cmd      string
 	Interval time.Duration
+	Enabled  bool
 }
 
 type Config struct {
@@ -42,8 +43,9 @@ func DefaultConfig() Config {
 			SearchTreeWidth: 50,
 			Icons:           "nerd-fonts-status",
 			ColorFileNames:  true,
-			SideBySide:      true,
 			ShowDiffStats:   true,
+			Pager:           "delta --paging=never",
+			ExternalDiff:    "",
 		},
 	}
 }
@@ -52,7 +54,7 @@ func getConfigFilePath() string {
 	var configDirs []string
 
 	// Environment variable override - useful for development or non-standard setups.
-	if dir := os.Getenv("DIFFNAV_CONFIG_DIR"); dir != "" {
+	if dir := os.Getenv("GIT_DIFFERENT_CONFIG_DIR"); dir != "" {
 		if s, err := os.Stat(dir); err == nil && s.IsDir() {
 			return filepath.Join(dir, "config.yml")
 		}
@@ -77,7 +79,7 @@ func getConfigFilePath() string {
 
 	// Return the first config file that exists.
 	for _, dir := range configDirs {
-		configPath := filepath.Join(dir, "diffnav", "config.yml")
+		configPath := filepath.Join(dir, "git-different", "config.yml")
 		if _, err := os.Stat(configPath); err == nil {
 			return configPath
 		}
@@ -85,7 +87,7 @@ func getConfigFilePath() string {
 
 	// If no config file exists, return the preferred path for creation.
 	if len(configDirs) > 0 {
-		return filepath.Join(configDirs[0], "diffnav", "config.yml")
+		return filepath.Join(configDirs[0], "git-different", "config.yml")
 	}
 	return ""
 }
