@@ -23,9 +23,9 @@ import (
 )
 
 type Model struct {
-	t     tree.Model
 	files []*gitdiff.File
 	cfg   config.Config
+	t     tree.Model
 }
 
 func New(cfg config.Config) Model {

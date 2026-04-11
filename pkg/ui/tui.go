@@ -22,12 +22,12 @@ import (
 	"github.com/dlvhdr/diffnav/pkg/config"
 	"github.com/dlvhdr/diffnav/pkg/dirnode"
 	"github.com/dlvhdr/diffnav/pkg/filenode"
+	gitpkg "github.com/dlvhdr/diffnav/pkg/git"
 	"github.com/dlvhdr/diffnav/pkg/ui/common"
 	"github.com/dlvhdr/diffnav/pkg/ui/panes/diffviewer"
 	"github.com/dlvhdr/diffnav/pkg/ui/panes/filetree"
 	"github.com/dlvhdr/diffnav/pkg/ui/panes/help"
 	"github.com/dlvhdr/diffnav/pkg/utils"
-	"github.com/dlvhdr/diffnav/pkg/watch"
 	"github.com/lrstanley/go-nf/glyphs/md"
 	"github.com/lrstanley/go-nf/glyphs/neo"
 )
@@ -65,53 +65,53 @@ const (
 )
 
 type mainModel struct {
-	input             string
+	cachedMeta        commitMeta
+	repoRoot          string
+	lastDiffOutput    string
+	iconStyle         string
+	preamble          string
+	commitBranch      string
+	pendingCursorPath string
+	help              help.Model
+	gitArgs           []string
+	commits           []gitpkg.Commit
 	files             []*gitdiff.File
+	filtered          []string
 	fileTree          filetree.Model
+	search            textinput.Model
+	resultsVp         viewport.Model
+	messageVp         viewport.Model
+	config            config.Config
 	diffViewer        diffviewer.Model
 	width             int
 	height            int
-	isShowingFileTree bool
 	activePanel       Panel
-	search            textinput.Model
-	resultsVp         viewport.Model
 	resultsCursor     int
+	watchInterval     time.Duration
+	commitView        bool
+	isShowingFileTree bool
 	searching         bool
-	filtered          []string
-	config            config.Config
 	draggingSidebar   bool
-	iconStyle         string
-	sideBySide        bool
-	help              help.Model
 	helpOpen          bool
 	messageOpen       bool
-	messageVp         viewport.Model
-	preamble          string
-	commitBranch      string
-	cachedMeta        commitMeta
 	watchEnabled      bool
-	watchCmd          string
-	watchInterval     time.Duration
-	pendingCursorPath string
 	watchInFlight     bool
-	repoRoot          string
 }
 
-func New(input string, cfg config.Config) mainModel {
+func New(repoRoot string, gitArgs []string, cfg config.Config) mainModel {
 	m := mainModel{
-		input:             input,
+		repoRoot:          repoRoot,
+		gitArgs:           gitArgs,
 		isShowingFileTree: cfg.UI.ShowFileTree,
 		activePanel:       FileTreePanel,
 		config:            cfg,
 		iconStyle:         cfg.UI.Icons,
-		sideBySide:        false,
 		watchEnabled:      cfg.Watch.Enabled,
-		watchCmd:          cfg.Watch.Cmd,
 		watchInterval:     cfg.Watch.Interval,
 	}
 	m.fileTree = filetree.New(cfg)
 	m.fileTree.SetSize(cfg.UI.FileTreeWidth, 0)
-	m.diffViewer = diffviewer.New(false)
+	m.diffViewer = diffviewer.New()
 	m.help = help.New()
 	m.help.SetKeys(KeyGroups())
 
@@ -133,25 +133,15 @@ func New(input string, cfg config.Config) mainModel {
 	return m
 }
 
-type repoRootMsg string
-
-func (m mainModel) fetchRepoRoot() tea.Msg {
-	out, err := exec.Command("git", "rev-parse", "--show-toplevel").Output()
-	if err != nil {
-		return repoRootMsg("")
-	}
-	return repoRootMsg(strings.TrimSpace(string(out)))
-}
-
 type watchTickMsg struct{ time.Time }
 
 type watchResultMsg struct {
-	output string
 	err    error
+	output string
 }
 
 func (m mainModel) Init() tea.Cmd {
-	cmds := []tea.Cmd{m.fetchFileTree, m.diffViewer.Init(), m.fetchRepoRoot}
+	cmds := []tea.Cmd{m.fetchFileTree, m.diffViewer.Init()}
 	if m.watchEnabled {
 		cmds = append(cmds, m.scheduleWatchTick())
 	}
@@ -165,7 +155,7 @@ func (m mainModel) scheduleWatchTick() tea.Cmd {
 }
 
 func (m mainModel) fetchWatchDiff() tea.Msg {
-	output, err := watch.RunCmd(m.watchCmd)
+	output, err := gitpkg.DiffUnified(m.repoRoot, m.gitArgs)
 	return watchResultMsg{output: output, err: err}
 }
 
@@ -234,8 +224,8 @@ func (m mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.resultsVp.SetHeight(m.mainContentHeight() - searchHeight)
 			m.resultsVp.SetContent(m.resultsView())
 
-			dfCmd := m.diffViewer.SetSize(m.width-m.sidebarWidth(), m.mainContentHeight())
-			cmds = append(cmds, dfCmd, m.search.Focus())
+			m.diffViewer.SetSize(m.width-m.sidebarWidth(), m.mainContentHeight())
+			cmds = append(cmds, m.search.Focus())
 		case key.Matches(msg, keys.ToggleFileTree):
 			m.isShowingFileTree = !m.isShowingFileTree
 			sidebarWidth := m.sidebarWidth()
@@ -253,14 +243,14 @@ func (m mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			m.fileTree.SetSize(treeWidth, h-searchHeight)
 			m.search.SetWidth(m.searchWidth())
-			dfCmd := m.diffViewer.SetSize(m.width-sidebarWidth, h)
-			cmds = append(cmds, dfCmd)
+			m.diffViewer.SetSize(m.width-sidebarWidth, h)
 		case key.Matches(msg, keys.ToggleIconStyle):
 			m.cycleIconStyle()
 		case key.Matches(msg, keys.ToggleCommitView):
-			m.sideBySide = !m.sideBySide
-			cmd = m.diffViewer.SetSideBySide(m.sideBySide)
-			cmds = append(cmds, cmd)
+			if len(m.commits) > 1 {
+				m.commitView = !m.commitView
+				// Commit-segmented tree rebuild will be added in Task 7
+			}
 		case key.Matches(msg, keys.SwitchPanel):
 			if m.isShowingFileTree {
 				if m.activePanel == FileTreePanel {
@@ -306,8 +296,7 @@ func (m mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.help.Update(msg)
 		m.width = msg.Width
 		m.height = msg.Height
-		dfCmd := m.diffViewer.SetSize(m.width-m.sidebarWidth(), m.mainContentHeight())
-		cmds = append(cmds, dfCmd)
+		m.diffViewer.SetSize(m.width-m.sidebarWidth(), m.mainContentHeight())
 
 		tWidth, tHeight := m.sidebarWidth(), m.mainContentHeight()-searchHeight
 
@@ -324,9 +313,6 @@ func (m mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.watchInFlight = true
 		return m, m.fetchWatchDiff
 
-	case repoRootMsg:
-		m.repoRoot = string(msg)
-
 	case watchResultMsg:
 		m.watchInFlight = false
 		if msg.err != nil {
@@ -334,18 +320,18 @@ func (m mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmds = append(cmds, m.scheduleWatchTick())
 			return m, tea.Batch(cmds...)
 		}
-		if msg.output == m.input {
+		if msg.output == m.lastDiffOutput {
 			cmds = append(cmds, m.scheduleWatchTick())
 			return m, tea.Batch(cmds...)
 		}
 		m.pendingCursorPath = m.fileTree.CurrNodePath()
-		m.diffViewer.ClearCache()
-		m.input = msg.output
+		m.lastDiffOutput = msg.output
 		cmds = append(cmds, m.fetchFileTree, m.scheduleWatchTick())
 		return m, tea.Batch(cmds...)
 
 	case fileTreeMsg:
 		m.files = msg.files
+		m.commits = msg.commits
 		if len(m.files) == 0 && !m.watchEnabled {
 			return m, tea.Quit
 		}
@@ -354,7 +340,7 @@ func (m mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.commitBranch = msg.branch
 		m.cachedMeta = m.parseCommitMeta()
 		m.diffViewer.SetPreamble(m.preamble)
-		m.diffViewer, cmd = m.diffViewer.SetDirPatch("/", m.fileTree.GetCurrNodeDesendantDiffs())
+		m, cmd = m.setNodeDiff(m.fileTree.GetCurrNode())
 		cmds = append(cmds, cmd)
 		if m.pendingCursorPath != "" {
 			m.fileTree.SetCursorByPath(m.pendingCursorPath)
@@ -363,6 +349,9 @@ func (m mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmds = append(cmds, cmd)
 			m.pendingCursorPath = ""
 		}
+
+	case diffRenderedMsg:
+		m.diffViewer.SetContent(string(msg))
 
 	case common.ErrMsg:
 		fmt.Printf("Error: %v\n", msg.Err)
@@ -427,20 +416,19 @@ func (m mainModel) searchUpdate(msg tea.Msg) (mainModel, []tea.Cmd) {
 			switch msg.String() {
 			case "esc":
 				m.stopSearch()
-				dfCmd := m.diffViewer.SetSize(m.width-m.sidebarWidth(), m.mainContentHeight())
-				cmds = append(cmds, dfCmd)
+				m.diffViewer.SetSize(m.width-m.sidebarWidth(), m.mainContentHeight())
 			case "ctrl+c":
 				return m, []tea.Cmd{tea.Quit}
 			case "enter":
 				m.stopSearch()
-				dfCmd := m.diffViewer.SetSize(m.width-m.sidebarWidth(), m.mainContentHeight())
-				cmds = append(cmds, dfCmd)
+				m.diffViewer.SetSize(m.width-m.sidebarWidth(), m.mainContentHeight())
 
 				if selected, ok := m.selectedSearchResult(); ok {
 					for _, f := range m.files {
 						if filenode.GetFileName(f) == selected {
-							m.diffViewer, cmd = m.diffViewer.SetFilePatch(f)
 							m.fileTree.SetCursorByPath(filenode.GetFileName(f))
+							node := m.fileTree.GetCurrNode()
+							m, cmd = m.setNodeDiff(node)
 							cmds = append(cmds, cmd)
 							break
 						}
@@ -582,18 +570,22 @@ type fileTreeMsg struct {
 	files    []*gitdiff.File
 	preamble string
 	branch   string
+	commits  []gitpkg.Commit
 }
 
 func (m mainModel) fetchFileTree() tea.Msg {
-	// TODO: handle error
-	files, preamble, err := gitdiff.Parse(strings.NewReader(m.input + "\n"))
+	diffOutput, err := gitpkg.DiffUnified(m.repoRoot, m.gitArgs)
+	if err != nil {
+		return common.ErrMsg{Err: err}
+	}
+	files, preamble, err := gitdiff.Parse(strings.NewReader(diffOutput + "\n"))
 	if err != nil {
 		return common.ErrMsg{Err: err}
 	}
 	sortFiles(files)
-
 	branch := resolveBranch(preamble)
-	return fileTreeMsg{files: files, preamble: preamble, branch: branch}
+	commits, _ := gitpkg.LogCommits(m.repoRoot, m.gitArgs)
+	return fileTreeMsg{files: files, preamble: preamble, branch: branch, commits: commits}
 }
 
 // resolveBranch finds branches pointing at the preamble commit.
@@ -724,7 +716,7 @@ func (m mainModel) viewHeader() string {
 	title := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("6")).
 		Bold(true).
-		Render("DIFFNAV")
+		Render("GIT-DIFFERENT")
 
 	sep := lipgloss.NewStyle().Foreground(lipgloss.BrightBlack).Render(" • ")
 	hashStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("132"))
@@ -789,7 +781,12 @@ func (m mainModel) footerView() string {
 	base := lipgloss.NewStyle().Background(common.Colors[common.DarkerSelected])
 	files := fmt.Sprintf(" %d files", len(m.files))
 	sep := base.Foreground(lipgloss.BrightBlack).Render(" • ")
-	added, deleted := m.diffViewer.RootDiffStats()
+	var added, deleted int64
+	for _, f := range m.files {
+		na, nd := filenode.DiffStats(f)
+		added += na
+		deleted += nd
+	}
 	help := zone.Mark(
 		zoneHelp,
 		base.Background(lipgloss.BrightBlack).PaddingLeft(1).PaddingRight(1).Render("F1/? help"),
@@ -807,7 +804,7 @@ func (m mainModel) footerView() string {
 	)
 
 	if m.watchEnabled {
-		watchLabel := base.Foreground(lipgloss.Yellow).Render("watching: " + m.watchCmd)
+		watchLabel := base.Foreground(lipgloss.Yellow).Render("watching")
 		parts = append(parts, sep, watchLabel)
 		usedWidth += lipgloss.Width(sep) + lipgloss.Width(watchLabel)
 	}
@@ -1146,17 +1143,12 @@ func (m mainModel) handleSearchResultClick(msg tea.MouseMsg) (tea.Model, tea.Cmd
 
 	var cmd tea.Cmd
 	var cmds []tea.Cmd
-	dfCmd := m.diffViewer.SetSize(m.width-m.sidebarWidth(), m.mainContentHeight())
-	cmds = append(cmds, dfCmd)
+	m.diffViewer.SetSize(m.width-m.sidebarWidth(), m.mainContentHeight())
 
-	for _, f := range m.files {
-		if filenode.GetFileName(f) == selected {
-			m.diffViewer, cmd = m.diffViewer.SetFilePatch(f)
-			m.fileTree.SetCursorByPath(filenode.GetFileName(f))
-			cmds = append(cmds, cmd)
-			break
-		}
-	}
+	m.fileTree.SetCursorByPath(selected)
+	node := m.fileTree.GetCurrNode()
+	m, cmd = m.setNodeDiff(node)
+	cmds = append(cmds, cmd)
 
 	return m, tea.Batch(cmds...)
 }
@@ -1175,8 +1167,8 @@ func (m mainModel) handleSearchBoxClick() (tea.Model, tea.Cmd) {
 	m.resultsVp.SetHeight(m.mainContentHeight() - searchHeight)
 	m.resultsVp.SetContent(m.resultsView())
 
-	dfCmd := m.diffViewer.SetSize(m.width-m.sidebarWidth(), m.mainContentHeight())
-	return m, tea.Batch(dfCmd, m.search.Focus())
+	m.diffViewer.SetSize(m.width-m.sidebarWidth(), m.mainContentHeight())
+	return m, m.search.Focus()
 }
 
 func (m mainModel) handleFileTreeClick(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
@@ -1241,8 +1233,8 @@ func (m mainModel) handleSidebarDrag(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	if msg.Mouse().X < sidebarHideWidth {
 		m.isShowingFileTree = false
 		m.draggingSidebar = false
-		cmd := m.diffViewer.SetSize(m.width, m.mainContentHeight())
-		return m, cmd
+		m.diffViewer.SetSize(m.width, m.mainContentHeight())
+		return m, nil
 	}
 
 	// Clamp to reasonable bounds.
@@ -1257,12 +1249,10 @@ func (m mainModel) handleSidebarDrag(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	}
 
 	// Resize components.
-	cmds := []tea.Cmd{}
-
-	cmds = append(cmds, m.diffViewer.SetSize(m.width-newWidth, m.mainContentHeight()))
+	m.diffViewer.SetSize(m.width-newWidth, m.mainContentHeight())
 	m.fileTree.SetSize(newWidth-1, m.mainContentHeight()-searchHeight-1)
 
-	return m, tea.Batch(cmds...)
+	return m, nil
 }
 
 func abs(x int) int {
@@ -1310,22 +1300,53 @@ func (m mainModel) moveCursor(movement int) (mainModel, tea.Cmd) {
 }
 
 func (m mainModel) setNodeDiff(node *tree.Node) (mainModel, tea.Cmd) {
-	var cmd tea.Cmd
 	switch val := node.GivenValue().(type) {
 	case *filenode.FileNode:
-		m.diffViewer, cmd = m.diffViewer.SetFilePatch(val.File)
+		fname := filenode.GetFileName(val.File)
+		additions, deletions := filenode.DiffStats(val.File)
+		m.diffViewer.SetFileHeader(fname, additions, deletions)
+		args := append(m.gitArgs, "--", fname)
+		return m, m.renderDiff(args)
 	case string, *dirnode.DirNode:
 		files := m.fileTree.GetCurrNodeDesendantDiffs()
-
 		fullPath := "/"
-		if val, ok := node.GivenValue().(*dirnode.DirNode); ok {
-			fullPath = val.FullPath
+		if dir, ok := node.GivenValue().(*dirnode.DirNode); ok {
+			fullPath = dir.FullPath
 		}
-		m.diffViewer, cmd = m.diffViewer.SetDirPatch(fullPath, files)
+		var added, deleted int64
+		for _, file := range files {
+			na, nd := filenode.DiffStats(file)
+			added += na
+			deleted += nd
+		}
+		m.diffViewer.SetDirHeader(fullPath, added, deleted)
+		var pathArgs []string
+		pathArgs = append(pathArgs, m.gitArgs...)
+		if fullPath != "/" {
+			pathArgs = append(pathArgs, "--", fullPath+"/")
+		}
+		return m, m.renderDiff(pathArgs)
 	}
-
-	return m, cmd
+	return m, nil
 }
+
+func (m mainModel) renderDiff(args []string) tea.Cmd {
+	return func() tea.Msg {
+		var output string
+		var err error
+		if m.config.UI.ExternalDiff != "" {
+			output, err = gitpkg.ExternalDiff(m.repoRoot, m.config.UI.ExternalDiff, args)
+		} else {
+			output, err = gitpkg.PipeToPager(m.repoRoot, m.config.UI.Pager, args)
+		}
+		if err != nil {
+			return common.ErrMsg{Err: err}
+		}
+		return diffRenderedMsg(output)
+	}
+}
+
+type diffRenderedMsg string
 
 func (m *mainModel) setSearchResults() {
 	filtered := make([]string, 0)

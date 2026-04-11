@@ -196,7 +196,7 @@ func newTestMainModel(t *testing.T) mainModel {
 		t.Fatal(err)
 	}
 
-	m := New(string(data), cfg)
+	m := New(".", nil, cfg)
 	m.files = files
 	m.fileTree = m.fileTree.SetFiles(files)
 

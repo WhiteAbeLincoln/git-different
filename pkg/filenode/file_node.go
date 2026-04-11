@@ -26,11 +26,11 @@ const (
 
 type FileNode struct {
 	File       *gitdiff.File
+	Cfg        config.Config
 	Depth      int
 	YOffset    int
-	Selected   bool
 	PanelWidth int
-	Cfg        config.Config
+	Selected   bool
 }
 
 func (f *FileNode) Path() string {

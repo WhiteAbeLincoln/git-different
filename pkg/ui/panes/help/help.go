@@ -9,9 +9,9 @@ import (
 
 type Model struct {
 	help   helpBubble.Model
+	keys   [][]key.Binding
 	width  int
 	height int
-	keys   [][]key.Binding
 }
 
 func New() Model {

@@ -1,13 +1,10 @@
 package cmd
 
 import (
-	"bufio"
 	"context"
 	_ "embed"
 	"fmt"
-	"io"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -17,13 +14,12 @@ import (
 	"charm.land/lipgloss/v2"
 	"charm.land/log/v2"
 	"github.com/charmbracelet/colorprofile"
-	"github.com/charmbracelet/x/ansi"
 	zone "github.com/lrstanley/bubblezone/v2"
 
 	"github.com/dlvhdr/diffnav/pkg/config"
+	gitpkg "github.com/dlvhdr/diffnav/pkg/git"
 	"github.com/dlvhdr/diffnav/pkg/ui"
 	"github.com/dlvhdr/diffnav/pkg/version"
-	"github.com/dlvhdr/diffnav/pkg/watch"
 )
 
 //go:embed logo-diff-part.txt
@@ -37,23 +33,26 @@ var logo = lipgloss.JoinHorizontal(lipgloss.Top,
 	lipgloss.NewStyle().Foreground(lipgloss.Red).Render(asciiArtNavPart))
 
 var rootCmd = &cobra.Command{
-	Use:   "diffnav",
-	Short: "DIFFNAV - a git diff pager based on delta but with a file tree, à la GitHub.",
+	Use:   "git-different [flags] [git-diff-args...]",
+	Short: "GIT-DIFFERENT — a git diff TUI with file tree navigation and configurable pager.",
 	Long: "\n" + logo + lipgloss.NewStyle().Foreground(lipgloss.White).Render(
-		"\na git diff pager based on delta\nbut with a file tree, à la GitHub"),
-	Example: `# pipe into diffnav
-git diff | diffnav
+		"\na git diff TUI with file tree navigation\nand configurable pager"),
+	Example: `# diff between branches
+git different main...feature-branch
 
-# use with the GitHub CLI
-gh pr diff https://github.com/dlvhdr/gh-dash/pull/447 | diffnav
+# diff last 3 commits
+git different HEAD~3
 
-# set up as the global git diff pager
-git config --global pager.diff diffnav
+# staged changes
+git different --staged
 
-# watch mode: auto-refresh a diff command
-diffnav --watch
-diffnav --watch --watch-cmd "git diff HEAD" --watch-interval 5s
+# working tree changes (default)
+git different
+
+# with watch mode
+git different --watch --watch-interval 5s HEAD
 	`,
+	DisableFlagParsing: false,
 }
 
 func Execute() {
@@ -80,47 +79,32 @@ func Execute() {
 }
 
 func init() {
-	rootCmd.Flags().BoolP("side-by-side", "s", false, "Force side-by-side diff view")
-
-	rootCmd.Flags().BoolP("unified", "u", false, "Force unified diff view")
+	rootCmd.Flags().String("pager", "", "Pager command (overrides config)")
+	rootCmd.Flags().String("external-diff", "", "External diff tool (overrides config)")
 
 	rootCmd.Flags().
-		BoolP("watch", "w", false, "Watch mode: periodically re-run a diff command and refresh")
-	rootCmd.Flags().String("watch-cmd", "git diff", "Command to run in watch mode")
+		BoolP("watch", "w", false, "Watch mode: periodically re-run git diff and refresh")
 	rootCmd.Flags().Duration("watch-interval", 2*time.Second, "Interval between watch refreshes")
 
 	rootCmd.SetVersionTemplate("\n" + logo + "\n" + `{{printf "version %s\n" .Version}}`)
 
 	rootCmd.Run = func(cmd *cobra.Command, args []string) {
-		// Parse CLI flags
-		sideBySideFlag, err := cmd.Flags().GetBool("side-by-side")
+		pagerFlag, err := cmd.Flags().GetString("pager")
 		if err != nil {
-			log.Fatal("Cannot parse the side-by-side flag", err)
+			log.Fatal("Cannot parse the pager flag", err)
 		}
-		unifiedFlag, err := cmd.Flags().GetBool("unified")
+		externalDiffFlag, err := cmd.Flags().GetString("external-diff")
 		if err != nil {
-			log.Fatal("Cannot parse the unified flag", err)
-		}
-
-		helpFlag, err := cmd.Flags().GetBool("help")
-		if err != nil {
-			log.Fatal("Cannot parse the help flag", err)
+			log.Fatal("Cannot parse the external-diff flag", err)
 		}
 
 		watchFlag, err := cmd.Flags().GetBool("watch")
 		if err != nil {
 			log.Fatal("Cannot parse the watch flag", err)
 		}
-		watchCmd, err := cmd.Flags().GetString("watch-cmd")
-		if err != nil {
-			log.Fatal("Cannot parse the watch-cmd flag", err)
-		}
 		watchInterval, err := cmd.Flags().GetDuration("watch-interval")
 		if err != nil {
 			log.Fatal("Cannot parse the watch-interval flag", err)
-		}
-		if cmd.Flags().Changed("watch-cmd") {
-			watchFlag = true
 		}
 
 		zone.NewGlobal()
@@ -152,7 +136,7 @@ func init() {
 					fmt.Println("Error getting current working dir", err)
 					os.Exit(1)
 				}
-				log.Debug("🚀 Starting diffnav", "logFile",
+				log.Debug("Starting git-different", "logFile",
 					wd+string(os.PathSeparator)+logFile.Name())
 			}
 		} else {
@@ -160,62 +144,41 @@ func init() {
 			log.SetLevel(log.FatalLevel)
 		}
 
-		var input string
-		if watchFlag {
-			stat, sErr := os.Stdin.Stat()
-			if sErr == nil && stat.Mode()&os.ModeNamedPipe != 0 {
-				fmt.Fprintln(os.Stderr, "Warning: stdin input ignored in watch mode")
-			}
-			output, wErr := watch.RunCmd(watchCmd)
-			if wErr != nil {
-				log.Warn("initial watch command failed, starting with empty diff", "err", wErr)
-			}
-			input = output
-		} else {
-			stat, sErr := os.Stdin.Stat()
-			if sErr != nil {
-				panic(sErr)
-			}
+		// Resolve repo root from CWD
+		cwd, err := os.Getwd()
+		if err != nil {
+			fmt.Println("Error getting working directory:", err)
+			os.Exit(1)
+		}
+		repoRoot, err := gitpkg.RepoRoot(cwd)
+		if err != nil {
+			fmt.Println("Not a git repository (or any parent)")
+			os.Exit(1)
+		}
 
-			if !helpFlag && stat.Mode()&os.ModeNamedPipe == 0 && stat.Size() == 0 {
-				fmt.Println("No diff, exiting")
-				os.Exit(0)
-			}
-
-			reader := bufio.NewReader(os.Stdin)
-			var b strings.Builder
-
-			for {
-				r, _, rErr := reader.ReadRune()
-				if rErr != nil && rErr == io.EOF {
-					break
-				}
-				_, rErr = b.WriteRune(r)
-				if rErr != nil {
-					fmt.Println("Error getting input:", rErr)
-					os.Exit(1)
-				}
-			}
-
-			input = ansi.Strip(b.String())
-			if strings.TrimSpace(input) == "" {
-				fmt.Println("No input provided, exiting")
-				os.Exit(0)
-			}
+		// Check if there are any diffs
+		entries, err := gitpkg.NameStatus(repoRoot, args)
+		if err != nil {
+			fmt.Println("Error running git diff:", err)
+			os.Exit(1)
+		}
+		if len(entries) == 0 && !watchFlag {
+			fmt.Println("No diff, exiting")
+			os.Exit(0)
 		}
 
 		cfg := config.Load()
 
-		// Override config with CLI flags if specified
-		if unifiedFlag {
-			cfg.UI.SideBySide = false
-		} else if sideBySideFlag {
-			cfg.UI.SideBySide = true
+		// Override config with CLI flags
+		if pagerFlag != "" {
+			cfg.UI.Pager = pagerFlag
+		}
+		if externalDiffFlag != "" {
+			cfg.UI.ExternalDiff = externalDiffFlag
 		}
 
 		cfg.Watch = config.WatchConfig{
 			Enabled:  watchFlag,
-			Cmd:      watchCmd,
 			Interval: watchInterval,
 		}
 
@@ -223,7 +186,7 @@ func init() {
 		if err != nil {
 			log.Fatal(err)
 		}
-		p := tea.NewProgram(ui.New(input, cfg), tea.WithInput(ttyIn))
+		p := tea.NewProgram(ui.New(repoRoot, args, cfg), tea.WithInput(ttyIn))
 
 		if _, err := p.Run(); err != nil {
 			log.Fatal(err)
