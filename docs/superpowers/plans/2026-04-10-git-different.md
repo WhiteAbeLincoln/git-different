@@ -34,7 +34,7 @@
 - Create: `pkg/git/git.go`
 - Create: `pkg/git/git_test.go`
 
-This package wraps all git CLI interactions. Every function returns structured data parsed from git output.
+This package wraps all git CLI interactions. Every function returns structured data parsed from git output. All commands use git's `-z` flag for NUL-delimited machine-readable output where available, avoiding fragile newline/tab parsing that breaks on filenames with special characters.
 
 - [ ] **Step 1: Write failing test for `NameStatus`**
 
@@ -139,32 +139,49 @@ type FileStatus struct {
 	Path   string
 }
 
-// NameStatus runs `git diff --name-status <args>` and returns parsed file statuses.
+// NameStatus runs `git diff --name-status -z <args>` and returns parsed file statuses.
+// Uses -z for NUL-delimited output to handle filenames with special characters.
 func NameStatus(repoDir string, args []string) ([]FileStatus, error) {
-	cmdArgs := append([]string{"diff", "--name-status"}, args...)
+	cmdArgs := append([]string{"diff", "--name-status", "-z"}, args...)
 	cmd := exec.Command("git", cmdArgs...)
 	cmd.Dir = repoDir
 	out, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("git diff --name-status: %w", err)
 	}
-	return parseNameStatus(string(out))
+	return parseNameStatusZ(string(out))
 }
 
-func parseNameStatus(output string) ([]FileStatus, error) {
+// parseNameStatusZ parses NUL-delimited --name-status output.
+// With -z, format is: STATUS\x00PATH\x00STATUS\x00PATH\x00...
+// For renames (R/C), format is: STATUS\x00OLDPATH\x00NEWPATH\x00
+func parseNameStatusZ(output string) ([]FileStatus, error) {
 	var entries []FileStatus
-	for _, line := range strings.Split(strings.TrimSpace(output), "\n") {
-		if line == "" {
+	parts := strings.Split(output, "\x00")
+	i := 0
+	for i < len(parts) {
+		status := parts[i]
+		if status == "" {
+			i++
 			continue
 		}
-		parts := strings.SplitN(line, "\t", 2)
-		if len(parts) < 2 {
-			continue
+		if i+1 >= len(parts) {
+			break
 		}
-		entries = append(entries, FileStatus{
-			Status: parts[0],
-			Path:   parts[1],
-		})
+		path := parts[i+1]
+		// Renames (R###) and copies (C###) have an extra field for the old path
+		if len(status) > 0 && (status[0] == 'R' || status[0] == 'C') {
+			if i+2 >= len(parts) {
+				break
+			}
+			// Use the new path (parts[i+2]) as the canonical path
+			path = parts[i+2]
+			entries = append(entries, FileStatus{Status: string(status[0]), Path: path})
+			i += 3
+		} else {
+			entries = append(entries, FileStatus{Status: status, Path: path})
+			i += 2
+		}
 	}
 	return entries, nil
 }
@@ -379,32 +396,39 @@ type Commit struct {
 	Subject string
 }
 
-// LogCommits runs `git log --reverse --format='%H %s' <args>` and returns commits
-// in chronological order (oldest first).
+// LogCommits runs `git log -z --reverse --format=<hash>%x00<subject> <args>`
+// and returns commits in chronological order (oldest first).
+// Uses -z for NUL record termination and %x00 as field separator within records.
 func LogCommits(repoDir string, args []string) ([]Commit, error) {
-	cmdArgs := append([]string{"log", "--reverse", "--format=%H %s"}, args...)
+	cmdArgs := append([]string{"log", "-z", "--reverse", "--format=%H%x00%s"}, args...)
 	cmd := exec.Command("git", cmdArgs...)
 	cmd.Dir = repoDir
 	out, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("git log: %w", err)
 	}
-	return parseLogCommits(string(out))
+	return parseLogCommitsZ(string(out))
 }
 
-func parseLogCommits(output string) ([]Commit, error) {
+// parseLogCommitsZ parses NUL-delimited git log output.
+// Format per record: HASH\x00SUBJECT (records separated by \x00 from -z).
+// With -z, git terminates each record with \x00, so the format string's
+// %x00 acts as the field separator within each record.
+func parseLogCommitsZ(output string) ([]Commit, error) {
 	var commits []Commit
-	for _, line := range strings.Split(strings.TrimSpace(output), "\n") {
-		if line == "" {
-			continue
-		}
-		// Format: <40-char-hash> <subject>
-		if len(line) < 42 {
+	// -z terminates records with \x00; --format=%H%x00%s puts \x00 between hash and subject.
+	// So the full output is: HASH\x00SUBJECT\x00HASH\x00SUBJECT\x00...
+	// We split on \x00 and consume pairs.
+	parts := strings.Split(output, "\x00")
+	for i := 0; i+1 < len(parts); i += 2 {
+		hash := parts[i]
+		subject := parts[i+1]
+		if hash == "" {
 			continue
 		}
 		commits = append(commits, Commit{
-			Hash:    line[:40],
-			Subject: line[41:],
+			Hash:    hash,
+			Subject: subject,
 		})
 	}
 	return commits, nil
@@ -463,38 +487,54 @@ var _ = Describe("DiffTreeFiles", func() {
 
 Add to `pkg/git/git.go`:
 ```go
-// DiffTreeFiles runs `git diff-tree --no-commit-id -r <hash>` and returns file statuses.
+// DiffTreeFiles runs `git diff-tree --no-commit-id -r -z <hash>` and returns file statuses.
+// Uses -z for NUL-delimited output.
 func DiffTreeFiles(repoDir string, hash string) ([]FileStatus, error) {
-	cmd := exec.Command("git", "diff-tree", "--no-commit-id", "-r", hash)
+	cmd := exec.Command("git", "diff-tree", "--no-commit-id", "-r", "-z", hash)
 	cmd.Dir = repoDir
 	out, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("git diff-tree: %w", err)
 	}
-	return parseDiffTree(string(out))
+	return parseDiffTreeZ(string(out))
 }
 
-func parseDiffTree(output string) ([]FileStatus, error) {
+// parseDiffTreeZ parses NUL-delimited diff-tree output.
+// With -z, format is: :old-mode new-mode old-hash new-hash status\x00path\x00...
+// For renames: :modes hashes status\x00old-path\x00new-path\x00
+func parseDiffTreeZ(output string) ([]FileStatus, error) {
 	var entries []FileStatus
-	for _, line := range strings.Split(strings.TrimSpace(output), "\n") {
-		if line == "" {
+	parts := strings.Split(output, "\x00")
+	for i := 0; i < len(parts); i++ {
+		part := parts[i]
+		if part == "" {
 			continue
 		}
-		// Format: :old-mode new-mode old-hash new-hash status\tpath
-		parts := strings.SplitN(line, "\t", 2)
-		if len(parts) < 2 {
+		// Each metadata section starts with ':' and ends with the status letter
+		if part[0] != ':' {
+			// This is a path following a metadata line — shouldn't happen
+			// if we're consuming correctly, but skip if so
 			continue
 		}
-		meta := parts[0]
-		path := parts[1]
-		fields := strings.Fields(meta)
+		fields := strings.Fields(part)
 		if len(fields) < 5 {
 			continue
 		}
-		entries = append(entries, FileStatus{
-			Status: fields[4],
-			Path:   path,
-		})
+		status := fields[4]
+		i++
+		if i >= len(parts) {
+			break
+		}
+		path := parts[i]
+		// Renames/copies have an extra path field
+		if len(status) > 0 && (status[0] == 'R' || status[0] == 'C') {
+			i++
+			if i < len(parts) {
+				path = parts[i] // use new path
+			}
+			status = string(status[0])
+		}
+		entries = append(entries, FileStatus{Status: status, Path: path})
 	}
 	return entries, nil
 }
