@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"context"
-	_ "embed"
 	"fmt"
 	"os"
 	"time"
@@ -22,21 +21,10 @@ import (
 	"github.com/WhiteAbeLincoln/git-different/pkg/version"
 )
 
-//go:embed logo-diff-part.txt
-var asciiArtDiffPart string
-
-//go:embed logo-nav-part.txt
-var asciiArtNavPart string
-
-var logo = lipgloss.JoinHorizontal(lipgloss.Top,
-	lipgloss.NewStyle().Foreground(lipgloss.Green).Render(asciiArtDiffPart),
-	lipgloss.NewStyle().Foreground(lipgloss.Red).Render(asciiArtNavPart))
-
 var rootCmd = &cobra.Command{
 	Use:   "git-different [flags] [git-diff-args...]",
 	Short: "GIT-DIFFERENT — a git diff TUI with file tree navigation and configurable pager.",
-	Long: "\n" + logo + lipgloss.NewStyle().Foreground(lipgloss.White).Render(
-		"\na git diff TUI with file tree navigation\nand configurable pager"),
+	Long:  "A git diff TUI with file tree navigation and configurable pager.",
 	Example: `# diff between branches
 git different main...feature-branch
 
@@ -87,7 +75,7 @@ func init() {
 		BoolP("watch", "w", false, "Watch mode: periodically re-run git diff and refresh")
 	rootCmd.Flags().Duration("watch-interval", 2*time.Second, "Interval between watch refreshes")
 
-	rootCmd.SetVersionTemplate("\n" + logo + "\n" + `{{printf "version %s\n" .Version}}`)
+	rootCmd.SetVersionTemplate(`{{printf "git-different version %s\n" .Version}}`)
 
 	rootCmd.Run = func(cmd *cobra.Command, args []string) {
 		pagerFlag, err := cmd.Flags().GetString("pager")
