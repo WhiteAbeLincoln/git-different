@@ -469,6 +469,25 @@ func (m *Model) GetCurrNode() *tree.Node {
 	return m.t.NodeAtCurrentOffset()
 }
 
+// AncestorCommitHash returns the hash of the CommitNode that is an ancestor of
+// the current cursor position, or "" if none exists.
+func (m *Model) AncestorCommitHash() string {
+	curr := m.t.NodeAtCurrentOffset()
+	if curr == nil {
+		return ""
+	}
+	var lastCommitHash string
+	for _, node := range m.t.AllNodes() {
+		if cn, ok := node.GivenValue().(*dirnode.CommitNode); ok {
+			lastCommitHash = cn.Hash
+		}
+		if node.YOffset() == curr.YOffset() {
+			return lastCommitHash
+		}
+	}
+	return ""
+}
+
 func (m *Model) GetCurrNodeDesendantDiffs() []*gitdiff.File {
 	var files []*gitdiff.File
 	for _, node := range m.GetCurrNode().AllNodes() {

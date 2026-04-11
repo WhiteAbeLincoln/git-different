@@ -1315,7 +1315,7 @@ func (m mainModel) setNodeDiff(node *tree.Node) (mainModel, tea.Cmd) {
 		m.diffViewer.SetFileHeader(fname, additions, deletions)
 
 		// In commit-segmented mode, diff within the specific commit
-		args := m.diffArgsForNode(node, fname)
+		args := m.diffArgsForFile(fname)
 		return m, m.renderDiff(args)
 
 	case *dirnode.CommitNode:
@@ -1345,32 +1345,31 @@ func (m mainModel) setNodeDiff(node *tree.Node) (mainModel, tea.Cmd) {
 			deleted += nd
 		}
 		m.diffViewer.SetDirHeader(fullPath, added, deleted)
-		var pathArgs []string
-		pathArgs = append(pathArgs, m.gitArgs...)
-		if fullPath != "/" {
-			pathArgs = append(pathArgs, "--", fullPath+"/")
+
+		// In commit-segmented mode, scope to the ancestor commit
+		var baseArgs []string
+		if m.commitView {
+			if hash := m.fileTree.AncestorCommitHash(); hash != "" {
+				baseArgs = []string{hash + "~1.." + hash}
+			}
 		}
-		return m, m.renderDiff(pathArgs)
+		if baseArgs == nil {
+			baseArgs = append(baseArgs, m.gitArgs...)
+		}
+		if fullPath != "/" {
+			baseArgs = append(baseArgs, "--", fullPath+"/")
+		}
+		return m, m.renderDiff(baseArgs)
 	}
 	return m, nil
 }
 
-// diffArgsForNode returns the git diff args for rendering a file,
+// diffArgsForFile returns the git diff args for rendering a file,
 // taking commit-segmented mode into account.
-func (m mainModel) diffArgsForNode(node *tree.Node, fname string) []string {
+func (m mainModel) diffArgsForFile(fname string) []string {
 	if m.commitView {
-		// Walk up to find the parent CommitNode
-		// For now, search commits for which one contains this file
-		for _, commit := range m.commits {
-			files, err := gitpkg.DiffTreeFiles(m.repoRoot, commit.Hash)
-			if err != nil {
-				continue
-			}
-			for _, fs := range files {
-				if fs.Path == fname {
-					return []string{commit.Hash + "~1.." + commit.Hash, "--", fname}
-				}
-			}
+		if hash := m.fileTree.AncestorCommitHash(); hash != "" {
+			return []string{hash + "~1.." + hash, "--", fname}
 		}
 	}
 	return append(m.gitArgs, "--", fname)
