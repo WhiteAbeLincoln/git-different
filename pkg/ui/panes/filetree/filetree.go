@@ -150,11 +150,12 @@ func (m *Model) rebuildCommitTree(commitFiles []CommitFiles) {
 			Hash:    cf.Hash,
 			Subject: cf.Subject,
 		})
-		for _, file := range cf.Files {
-			commitNode.Child(&filenode.FileNode{
-				File: file,
-				Cfg:  m.cfg,
-			})
+		// Build a full directory tree for this commit's files, then graft
+		// its children under the commit header node.
+		fileTree := buildFullFileTree(cf.Files, m.cfg)
+		fileTree = collapseTree(fileTree)
+		for _, child := range fileTree.ChildNodes() {
+			commitNode.Child(child)
 		}
 		root.Child(commitNode)
 	}
