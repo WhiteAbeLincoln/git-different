@@ -86,6 +86,28 @@ git different --watch --watch-interval 5s HEAD
 
 ## Configuration
 
+### Default diff tool
+
+When neither `--pager`, `--external-diff`, `ui.pager`, nor `ui.externalDiff`
+is set, `git-different` auto-detects a diff tool from PATH in this order:
+
+1. `difft` (difftastic) — used as an external diff tool
+2. `delta` — used as a pager (invoked with
+   `--paging=never --true-color=always`; `--true-color=always` is needed
+   because delta's auto-detection downgrades to 8-bit color when its stdout
+   is a pipe, even with `COLORTERM=truecolor` set)
+3. `bat` — used as a pager with syntax-highlighted diff (invoked with
+   `--color=always --language=Diff --style=-header`; bat's own file header
+   is suppressed because `git-different` already renders one above the
+   viewport)
+4. Nothing — falls back to git's raw unified-diff output in the viewport
+
+Any explicit setting in the config file or on the command line disables this
+auto-detection. If you want raw `git diff` output regardless of what's on
+PATH, set `ui.pager: "cat"` (or similar) in your config.
+
+### Config file
+
 Config file is searched in this order:
 
 1. `$GIT_DIFFERENT_CONFIG_DIR/config.yml` (if env var is set)
@@ -130,8 +152,8 @@ ui:
 
 | Option               | Type   | Default                 | Description                                   |
 | :------------------- | :----- | :---------------------- | :-------------------------------------------- |
-| `ui.pager`           | string | `delta --paging=never`  | Pager command (reads unified diff on stdin)   |
-| `ui.externalDiff`    | string | `""`                    | External diff tool (takes precedence)         |
+| `ui.pager`           | string | _auto-detected_         | Pager command (reads unified diff on stdin)   |
+| `ui.externalDiff`    | string | _auto-detected_         | External diff tool (takes precedence)         |
 | `ui.icons`           | string | `nerd-fonts-status`     | Icon style (see Icon Styles below)            |
 | `ui.showFileTree`    | bool   | `true`                  | Show file tree on startup                     |
 | `ui.fileTreeWidth`   | int    | `30`                    | Width of the file tree sidebar                |

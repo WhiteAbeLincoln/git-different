@@ -162,6 +162,11 @@ func init() {
 			cfg.UI.ExternalDiff = externalDiffFlag
 		}
 
+		// Auto-detect a diff tool when nothing was set on the command line
+		// or in the config file: prefer difftastic, then delta, then fall
+		// back to git's raw unified-diff output.
+		cfg = config.ResolveDiffTool(cfg)
+
 		cfg.Watch = config.WatchConfig{
 			Enabled:  watchFlag,
 			Interval: watchInterval,
