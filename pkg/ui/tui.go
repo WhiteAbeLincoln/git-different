@@ -249,7 +249,15 @@ func (m mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, keys.ToggleCommitView):
 			if len(m.commits) > 1 {
 				m.commitView = !m.commitView
-				// Commit-segmented tree rebuild will be added in Task 7
+				if m.commitView {
+					m, cmd = m.rebuildCommitSegmentedTree()
+					cmds = append(cmds, cmd)
+				} else {
+					m.fileTree = m.fileTree.SetFiles(m.files)
+					node := m.fileTree.GetCurrNode()
+					m, cmd = m.setNodeDiff(node)
+					cmds = append(cmds, cmd)
+				}
 			}
 		case key.Matches(msg, keys.SwitchPanel):
 			if m.isShowingFileTree {
@@ -1305,8 +1313,25 @@ func (m mainModel) setNodeDiff(node *tree.Node) (mainModel, tea.Cmd) {
 		fname := filenode.GetFileName(val.File)
 		additions, deletions := filenode.DiffStats(val.File)
 		m.diffViewer.SetFileHeader(fname, additions, deletions)
-		args := append(m.gitArgs, "--", fname)
+
+		// In commit-segmented mode, diff within the specific commit
+		args := m.diffArgsForNode(node, fname)
 		return m, m.renderDiff(args)
+
+	case *dirnode.CommitNode:
+		// Show all changes in this commit
+		files := m.fileTree.GetCurrNodeDesendantDiffs()
+		var added, deleted int64
+		for _, file := range files {
+			na, nd := filenode.DiffStats(file)
+			added += na
+			deleted += nd
+		}
+		header := val.Hash[:7] + " " + val.Subject
+		m.diffViewer.SetDirHeader(header, added, deleted)
+		args := []string{val.Hash + "~1.." + val.Hash}
+		return m, m.renderDiff(args)
+
 	case string, *dirnode.DirNode:
 		files := m.fileTree.GetCurrNodeDesendantDiffs()
 		fullPath := "/"
@@ -1328,6 +1353,57 @@ func (m mainModel) setNodeDiff(node *tree.Node) (mainModel, tea.Cmd) {
 		return m, m.renderDiff(pathArgs)
 	}
 	return m, nil
+}
+
+// diffArgsForNode returns the git diff args for rendering a file,
+// taking commit-segmented mode into account.
+func (m mainModel) diffArgsForNode(node *tree.Node, fname string) []string {
+	if m.commitView {
+		// Walk up to find the parent CommitNode
+		// For now, search commits for which one contains this file
+		for _, commit := range m.commits {
+			files, err := gitpkg.DiffTreeFiles(m.repoRoot, commit.Hash)
+			if err != nil {
+				continue
+			}
+			for _, fs := range files {
+				if fs.Path == fname {
+					return []string{commit.Hash + "~1.." + commit.Hash, "--", fname}
+				}
+			}
+		}
+	}
+	return append(m.gitArgs, "--", fname)
+}
+
+func (m mainModel) rebuildCommitSegmentedTree() (mainModel, tea.Cmd) {
+	var commitFiles []filetree.CommitFiles
+	for _, commit := range m.commits {
+		files, err := gitpkg.DiffTreeFiles(m.repoRoot, commit.Hash)
+		if err != nil {
+			continue
+		}
+		// Match DiffTreeFiles results to our parsed gitdiff.File objects
+		var matched []*gitdiff.File
+		for _, fs := range files {
+			for _, f := range m.files {
+				if filenode.GetFileName(f) == fs.Path {
+					matched = append(matched, f)
+					break
+				}
+			}
+		}
+		commitFiles = append(commitFiles, filetree.CommitFiles{
+			Hash:    commit.Hash,
+			Subject: commit.Subject,
+			Files:   matched,
+		})
+	}
+	m.fileTree = m.fileTree.SetCommitFiles(commitFiles)
+	node := m.fileTree.GetCurrNode()
+	var cmd tea.Cmd
+	m, cmd = m.setNodeDiff(node)
+	return m, cmd
 }
 
 func (m mainModel) renderDiff(args []string) tea.Cmd {

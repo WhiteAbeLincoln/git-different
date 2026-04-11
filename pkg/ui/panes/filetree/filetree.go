@@ -96,7 +96,7 @@ func (m *Model) updateStyles() {
 			switch child.GivenValue().(type) {
 			case *filenode.FileNode:
 				return base
-			case string, *dirnode.DirNode:
+			case string, *dirnode.DirNode, *dirnode.CommitNode:
 				return base.Foreground(lipgloss.BrightBlue)
 			}
 			return base
@@ -121,6 +121,48 @@ func (m Model) SetFiles(files []*gitdiff.File) Model {
 	m.updateStyles()
 
 	return m
+}
+
+// CommitFiles groups files by commit for the segmented view.
+type CommitFiles struct {
+	Hash    string
+	Subject string
+	Files   []*gitdiff.File
+}
+
+// SetCommitFiles builds the tree in commit-segmented mode.
+func (m Model) SetCommitFiles(commitFiles []CommitFiles) Model {
+	m.files = nil
+	for _, cf := range commitFiles {
+		m.files = append(m.files, cf.Files...)
+	}
+	m.rebuildCommitTree(commitFiles)
+	m.t.SetWidth(m.t.Width())
+	m.updateStyles()
+	return m
+}
+
+func (m *Model) rebuildCommitTree(commitFiles []CommitFiles) {
+	root := tree.Root(&dirnode.DirNode{FullPath: "/", Name: constants.RootName})
+
+	for _, cf := range commitFiles {
+		commitNode := tree.Root(&dirnode.CommitNode{
+			Hash:    cf.Hash,
+			Subject: cf.Subject,
+		})
+		for _, file := range cf.Files {
+			commitNode.Child(&filenode.FileNode{
+				File: file,
+				Cfg:  m.cfg,
+			})
+		}
+		root.Child(commitNode)
+	}
+
+	root, _ = truncateTree(root, 0, 0, 0, m.cfg, m.t.Width())
+	m.t.SetNodes(root)
+	m.t.SetWidth(m.t.Width())
+	m.updateStyles()
 }
 
 func (m *Model) Down() {
@@ -343,17 +385,26 @@ func truncateTree(
 	cfg config.Config,
 	width int,
 ) (*tree.Node, int) {
-	dir, ok := t.GivenValue().(*dirnode.DirNode)
-	if !ok {
+	var newT *tree.Node
+	switch val := t.GivenValue().(type) {
+	case *dirnode.DirNode:
+		newT = tree.Root(
+			&dirnode.DirNode{
+				Name:     utils.TruncateString(val.Name, width-depth-2),
+				FullPath: val.FullPath,
+			},
+		)
+	case *dirnode.CommitNode:
+		subject := utils.TruncateString(val.Subject, width-depth-10)
+		newT = tree.Root(
+			&dirnode.CommitNode{
+				Hash:    val.Hash,
+				Subject: subject,
+			},
+		)
+	default:
 		return t, 0
 	}
-
-	newT := tree.Root(
-		&dirnode.DirNode{
-			Name:     utils.TruncateString(dir.Name, width-depth-2),
-			FullPath: dir.FullPath,
-		},
-	)
 	numNodes++
 
 	for _, child := range t.ChildNodes() {
@@ -364,6 +415,11 @@ func truncateTree(
 			numChildren += subNum
 			numNodes += subNum + 1
 			child.SetValue(value)
+			newT.Child(subTree)
+		case *dirnode.CommitNode:
+			subTree, subNum := truncateTree(child, depth+1, numNodes, 0, cfg, width)
+			numChildren += subNum
+			numNodes += subNum + 1
 			newT.Child(subTree)
 		case *filenode.FileNode:
 			numNodes++
