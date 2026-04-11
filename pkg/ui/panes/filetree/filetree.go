@@ -23,9 +23,10 @@ import (
 )
 
 type Model struct {
-	files []*gitdiff.File
-	cfg   config.Config
-	t     tree.Model
+	files       []*gitdiff.File
+	commitFiles []CommitFiles // non-nil when in commit-segmented mode
+	cfg         config.Config
+	t           tree.Model
 }
 
 func New(cfg config.Config) Model {
@@ -114,6 +115,7 @@ func (m *Model) updateStyles() {
 
 func (m Model) SetFiles(files []*gitdiff.File) Model {
 	m.files = files
+	m.commitFiles = nil // exit commit-segmented mode
 	m.rebuildTree()
 
 	// need to re-apply the width as there's a bug where SetNodes resets it
@@ -136,6 +138,7 @@ func (m Model) SetCommitFiles(commitFiles []CommitFiles) Model {
 	for _, cf := range commitFiles {
 		m.files = append(m.files, cf.Files...)
 	}
+	m.commitFiles = commitFiles
 	m.rebuildCommitTree(commitFiles)
 	m.t.SetWidth(m.t.Width())
 	m.updateStyles()
@@ -245,6 +248,10 @@ func (m *Model) SetCursorByPath(path string) {
 }
 
 func (m *Model) rebuildTree() {
+	if m.commitFiles != nil {
+		m.rebuildCommitTree(m.commitFiles)
+		return
+	}
 	t := buildFullFileTree(m.files, m.cfg)
 	t = collapseTree(t)
 	t, _ = truncateTree(t, 0, 0, 0, m.cfg, m.t.Width())
