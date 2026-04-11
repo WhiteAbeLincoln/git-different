@@ -1,147 +1,166 @@
-<br />
-<p align="center">
-  <img width="504" height="96" alt="output-onlinepngtools" src="https://github.com/user-attachments/assets/b932225f-7f49-4274-886d-61e640f4ef8b" />  
-</p>
+# git-different
 
-<p align="center">
-  A git diff pager based on <a href="https://github.com/dandavison/delta">delta</a> but with a file tree, à la GitHub.
-  <br />
-  <br />
-  <a href="https://github.com/dlvhdr/gh-dash/releases"><img src="https://img.shields.io/github/release/dlvhdr/diffnav.svg" alt="Latest Release"></a>
-  <a href="https://discord.gg/SXNXp9NctV"><img src="https://img.shields.io/discord/1413193703476035755?label=discord" alt="Discord"/></a>
-  <a href="https://github.com/sponsors/dlvhdr"><img src=https://img.shields.io/github/sponsors/dlvhdr?logo=githubsponsors&color=EA4AAA /></a>
-  <a href="https://www.jetify.com/devbox/docs/contributor-quickstart/" alt="Built with Devbox"><img src="https://www.jetify.com/img/devbox/shield_galaxy.svg" /></a>
-</p>
+A git diff TUI with a file tree sidebar, configurable pager, and commit-segmented view.
 
-<p align="center">
-  <img width="900" src="https://github.com/user-attachments/assets/104e156e-7e9d-4ea5-bea1-399ca71e12a5" />
-</p>
+> **This is a fork of [`diffnav`](https://github.com/dlvhdr/diffnav) by
+> [@dlvhdr](https://github.com/dlvhdr).** All credit for the original design,
+> TUI, and file tree implementation goes to the upstream project. This fork
+> changes the input model from stdin-piped to direct git invocation, makes the
+> pager/external-diff tool configurable, and adds a commit-segmented file tree
+> view. If you want a drop-in `git diff` pager with delta-style rendering, the
+> upstream project is probably what you want.
 
-## Donating ❤️
+## Differences from diffnav
 
-If you enjoy `diffnav` and want to help, consider supporting the project with a
-donation at the [sponsors page](https://github.com/sponsors/dlvhdr).
+- **Direct git invocation.** Instead of `git diff | diffnav`, invoke as
+  `git-different <git-diff-args>` (or `git different <args>` via git's
+  subcommand auto-discovery). `git-different` runs git itself, so it knows the
+  ref range, the commits in it, and the files in each commit.
+- **Configurable pager and external diff tool.** Use anything that consumes a
+  unified diff on stdin (`delta`, `bat`, `diff-so-fancy`) or any git external
+  diff tool (`difftastic`). Set a default in `config.yml`, override per-run
+  with `--pager` / `--external-diff`.
+- **Commit-segmented file tree.** When the diff range spans multiple commits,
+  press <kbd>c</kbd> to group files under commit headers and view each file's
+  per-commit diff in isolation. Great for reviewing a branch commit-by-commit.
+- **No stdin.** `git-different` does not read stdin. Arguments are git diff
+  arguments — whatever you'd pass to `git diff`, you pass here.
 
 ## Installation
 
-Homebrew:
+### Nix flake
 
 ```sh
-brew install dlvhdr/formulae/diffnav
+nix run github:WhiteAbeLincoln/git-different
+# or install into a profile
+nix profile install github:WhiteAbeLincoln/git-different
 ```
 
-Go:
+The flake also exposes a dev shell (`nix develop`) with everything required to
+build and lint the project.
+
+### Go install
 
 ```sh
-git clone https://github.com/dlvhdr/diffnav.git
-cd diffnav
-go install .
+go install github.com/WhiteAbeLincoln/git-different@latest
 ```
 
 > [!NOTE]
-> To get the icons to render properly you should download and install a Nerd font from https://www.nerdfonts.com/. Then, select that font as your font for the terminal.
->
-> _You can install these with brew as well: `brew install --cask font-<FONT NAME>-nerd-font`_
+> Nerd Font icons require a Nerd Font installed and selected in your
+> terminal. See https://www.nerdfonts.com/. If you don't want to install
+> a Nerd Font, set `ui.icons: unicode` or `ui.icons: ascii` in your config.
 
 ## Usage
 
-### Pipe into `diffnav`
-
-- `git diff | diffnav`
-- `gh pr diff https://github.com/dlvhdr/gh-dash/pull/447 | diffnav`
-
-### Set up as Global Git Diff Pager
-
-```bash
-git config --global pager.diff diffnav
-```
-
-## Flags
-
-| Flag                 | Description                                      |
-| -------------------- | ------------------------------------------------ |
-| `--side-by-side, -s` | Force side-by-side diff view                     |
-| `--unified, -u`      | Force unified diff view                          |
-| `--watch, -w`        | Watch mode: periodically re-run a command and refresh |
-| `--watch-cmd`        | Command to run in watch mode (implies `--watch`, default: `git diff`) |
-| `--watch-interval`   | Interval between watch refreshes (default: `2s`) |
-
-Example:
+Because the binary is named `git-different`, git's subcommand auto-discovery
+lets you invoke it as `git different`:
 
 ```sh
-git diff | diffnav --unified
-git diff | diffnav -u
+# working tree vs index (default)
+git different
+
+# staged changes
+git different --staged
+
+# last 3 commits
+git different HEAD~3
+
+# between branches
+git different main...feature-branch
+
+# with a specific file or directory
+git different HEAD~5 -- src/
+
+# with watch mode (re-runs git diff periodically)
+git different --watch --watch-interval 5s HEAD
 ```
 
-### Watch Mode
+### Flags
 
-Watch mode lets diffnav periodically re-run a diff command and refresh the display automatically. This is useful for monitoring changes as you work.
-
-```sh
-# watch unstaged changes (default: git diff, every 2s)
-diffnav --watch
-
-# watch staged changes with a custom interval
-diffnav --watch-cmd "git diff --cached" --watch-interval 5s
-
-# watch changes against a specific branch
-diffnav --watch-cmd "git diff main..."
-```
+| Flag              | Description                                                    |
+| ----------------- | -------------------------------------------------------------- |
+| `--pager`         | Pager command (overrides config)                               |
+| `--external-diff` | External diff tool (overrides config)                          |
+| `--watch, -w`     | Watch mode: periodically re-run git diff and refresh           |
+| `--watch-interval`| Interval between watch refreshes (default: `2s`)               |
 
 ## Configuration
 
-The config file is searched in this order:
+Config file is searched in this order:
 
-1. `$DIFFNAV_CONFIG_DIR/config.yml` (if env var is set)
-2. `$XDG_CONFIG_HOME/diffnav/config.yml` (if set, macOS only)
-3. `~/.config/diffnav/config.yml` (macOS and Linux)
-4. OS-specific config directory (e.g., `~/Library/Application Support/diffnav/config.yml` on macOS)
+1. `$GIT_DIFFERENT_CONFIG_DIR/config.yml` (if env var is set)
+2. `$XDG_CONFIG_HOME/git-different/config.yml` (if set, macOS only)
+3. `~/.config/git-different/config.yml` (macOS and Linux)
+4. OS-specific config directory (e.g., `~/Library/Application Support/git-different/config.yml` on macOS)
 
-Example config file:
+Example:
 
 ```yaml
 ui:
-  # Hide the header to get more screen space for diffs
-  hideHeader: true
+  # Pager command. Any tool that consumes a unified diff on stdin.
+  pager: "delta --paging=never --side-by-side"
 
-  # Hide the footer (keybindings help)
-  hideFooter: true
+  # External diff tool. When set, takes precedence over `pager`.
+  # git invokes the tool directly with file paths.
+  externalDiff: "difft --display=side-by-side"
 
-  # Start with the file tree hidden (toggle with 'e')
-  showFileTree: false
-
-  # Customize the file tree width (default: 26)
-  fileTreeWidth: 30
-
-  # Customize the search panel width (default: 50)
-  searchTreeWidth: 60
-
-  # Icon style: "status" (default), "simple", "filetype", "full", "unicode", or "ascii"
+  # Icon style: "nerd-fonts-status" (default), "nerd-fonts-simple",
+  # "nerd-fonts-filetype", "nerd-fonts-full", "unicode", or "ascii"
   icons: nerd-fonts-status
 
-  # Color filenames by git status (default: true)
-  colorFileNames: false
+  # Start with the file tree hidden (toggle with 'e')
+  showFileTree: true
 
-  # Show the amount of lines added / removed next to the file
-  showDiffStats: false
+  # File tree width
+  fileTreeWidth: 30
 
-  # Use side-by-side diff view (default: true, set false for unified)
-  sideBySide: true
+  # Search panel width
+  searchTreeWidth: 50
+
+  # Hide the header and footer for more diff space
+  hideHeader: false
+  hideFooter: false
+
+  # Color filenames by git status
+  colorFileNames: true
+
+  # Show diff stats next to each file
+  showDiffStats: true
 ```
 
-| Option               | Type   | Default             | Description                                               |
-| :------------------- | :----- | :------------------ | :-------------------------------------------------------- |
-| `ui.hideHeader`      | bool   | `false`             | Hide the "DIFFNAV" header                                 |
-| `ui.hideFooter`      | bool   | `false`             | Hide the footer with keybindings help                     |
-| `ui.showFileTree`    | bool   | `true`              | Show file tree on startup                                 |
-| `ui.fileTreeWidth`   | int    | `26`                | Width of the file tree sidebar                            |
-| `ui.searchTreeWidth` | int    | `50`                | Width of the search panel                                 |
-| `ui.icons`           | string | `nerd-fonts-status` | Icon style (see below for details)                        |
-| `ui.colorFileNames`  | bool   | `true`              | Color filenames by git status                             |
-| `ui.showDiffStats`   | bool   | `true`              | Show the amount of lines added / removed next to the file |
-| `ui.sideBySide`      | bool   | `true`              | Use side-by-side diff view (false for unified)            |
+| Option               | Type   | Default                 | Description                                   |
+| :------------------- | :----- | :---------------------- | :-------------------------------------------- |
+| `ui.pager`           | string | `delta --paging=never`  | Pager command (reads unified diff on stdin)   |
+| `ui.externalDiff`    | string | `""`                    | External diff tool (takes precedence)         |
+| `ui.icons`           | string | `nerd-fonts-status`     | Icon style (see Icon Styles below)            |
+| `ui.showFileTree`    | bool   | `true`                  | Show file tree on startup                     |
+| `ui.fileTreeWidth`   | int    | `30`                    | Width of the file tree sidebar                |
+| `ui.searchTreeWidth` | int    | `50`                    | Width of the search panel                     |
+| `ui.hideHeader`      | bool   | `false`                 | Hide the header                               |
+| `ui.hideFooter`      | bool   | `false`                 | Hide the footer with keybindings help         |
+| `ui.colorFileNames`  | bool   | `true`                  | Color filenames by git status                 |
+| `ui.showDiffStats`   | bool   | `true`                  | Show lines added / removed next to each file  |
 
-### Icon Styles
+### Pager vs external diff
+
+These are two different rendering pipelines — pick one:
+
+- **Pager** (`delta`, `bat`, `diff-so-fancy`, …): `git-different` runs
+  `git diff -- <path>` and pipes the unified diff into the pager. The pager
+  colorizes/renders it. This is the default mode.
+- **External diff** (`difftastic`, …): `git-different` runs
+  `git -c diff.external=<tool> diff -- <path>`. Git invokes the tool with file
+  paths, and the tool computes and renders its own diff. Use this when the
+  tool does structural diffing rather than textual.
+
+If `externalDiff` is set (via config or `--external-diff`), it takes precedence
+over `pager`.
+
+For difftastic specifically, `git-different` exports `DFT_WIDTH`, `COLUMNS`,
+and `DFT_COLOR=always` so colors and wrapping work sensibly in the embedded
+viewer.
+
+### Icon styles
 
 | Style                 | Description                                                      |
 | :-------------------- | :--------------------------------------------------------------- |
@@ -149,51 +168,44 @@ ui:
 | `nerd-fonts-simple`   | Generic file icon colored by change type                         |
 | `nerd-fonts-filetype` | File-type specific icons (language icons) colored by change type |
 | `nerd-fonts-full`     | Both status icon and file-type icon, all colored                 |
-| `unicode`             | Unicode symbols (+/⛌/●)                                          |
-| `ascii`               | Plain ASCII characters (+/x/\*)                                  |
+| `unicode`             | Unicode symbols                                                  |
+| `ascii`               | Plain ASCII characters                                           |
 
-### Delta
+## Keybindings
 
-You can also configure the diff rendering through delta. Check out [their docs](https://dandavison.github.io/delta/configuration.html).
-
-If you want the exact delta configuration I'm using - [it can be found here](https://github.com/dlvhdr/diffnav/blob/main/cfg/delta.conf).
-
-## Keys
-
-| Key               | Description                      |
-| :---------------- | :------------------------------- |
-| <kbd>j</kbd>      | Next node                        |
-| <kbd>k</kbd>      | Previous node                    |
-| <kbd>n</kbd>      | Next file                        |
-| <kbd>p</kbd> / <kbd>N</kbd> | Previous file          |
-| <kbd>Ctrl-d</kbd> | Scroll the diff down             |
-| <kbd>Ctrl-u</kbd> | Scroll the diff up               |
-| <kbd>e</kbd>      | Toggle the file tree             |
-| <kbd>t</kbd>      | Search/go-to file                |
-| <kbd>y</kbd>      | Copy file path                   |
-| <kbd>i</kbd>      | Cycle icon style                 |
-| <kbd>o</kbd>      | Open file in $EDITOR             |
-| <kbd>s</kbd>      | Toggle side-by-side/unified view |
-| <kbd>Tab</kbd>    | Switch focus between the panes   |
-| <kbd>q</kbd>      | Quit                             |
-
-## Discord
-
-Have questions? Join our [Discord community](https://discord.gg/SXNXp9NctV)!
+| Key                         | Description                              |
+| :-------------------------- | :--------------------------------------- |
+| <kbd>j</kbd> / <kbd>↓</kbd> | Next node                                |
+| <kbd>k</kbd> / <kbd>↑</kbd> | Previous node                            |
+| <kbd>n</kbd>                | Next file (skip directories)             |
+| <kbd>p</kbd> / <kbd>N</kbd> | Previous file (skip directories)         |
+| <kbd>h</kbd>                | Collapse node                            |
+| <kbd>l</kbd>                | Expand node                              |
+| <kbd>Enter</kbd>            | Toggle node                              |
+| <kbd>Ctrl-d</kbd>           | Scroll the diff down                     |
+| <kbd>Ctrl-u</kbd>           | Scroll the diff up                       |
+| <kbd>e</kbd>                | Toggle the file tree                     |
+| <kbd>t</kbd>                | Search / go-to file                      |
+| <kbd>y</kbd>                | Copy file path                           |
+| <kbd>o</kbd>                | Open file in `$EDITOR`                   |
+| <kbd>c</kbd>                | Toggle commit-segmented view             |
+| <kbd>i</kbd>                | Cycle icon style                         |
+| <kbd>m</kbd>                | Show commit info                         |
+| <kbd>Tab</kbd>              | Switch focus between panes               |
+| <kbd>?</kbd> / <kbd>F1</kbd>| Toggle help                              |
+| <kbd>q</kbd>                | Quit                                     |
 
 ## Contributing
 
-See the contribution guide at [https://www.gh-dash.dev/contributing](https://www.gh-dash.dev/contributing/).
+See [CONTRIBUTING.md](CONTRIBUTING.md) and the [AI Usage Policy](AI_POLICY.md).
 
-## Under the Hood
+## Credits
 
-`diffnav` uses:
+`git-different` is a fork of [`diffnav`](https://github.com/dlvhdr/diffnav) by
+[@dlvhdr](https://github.com/dlvhdr). The file tree, search, icon rendering,
+and overall TUI layout come from upstream — this fork adds a git-aware CLI, a
+configurable pager/external-diff system, and a commit-segmented view.
 
-- [Bubble Tea](https://github.com/charmbracelet/bubbletea) for the TUI
-- [`delta`](https://github.com/dandavison/delta) for viewing the diffed file
-
-Screenshots use:
-
-- [kitty](https://sw.kovidgoyal.net/kitty/) for the terminal
-- [tokyonight](https://github.com/folke/tokyonight.nvim) for the color scheme
-- [CommitMono](https://www.nerdfonts.com/font-downloads) for the font
+Built on:
+- [Bubble Tea](https://github.com/charmbracelet/bubbletea) — TUI framework
+- [`go-gitdiff`](https://github.com/bluekeyes/go-gitdiff) — unified diff parser

@@ -8,18 +8,15 @@ Set Framerate 30
 Set Padding 12
 
 Hide
-Type "figlet diffnav | lolcat"
+Type "figlet git-different | lolcat"
 Enter
 Sleep 100ms
-Type "# Use `git diff | diffnav` OR use the GitHub cli"
+Type "# Invoke as `git different <git-diff-args>`"
 Enter
 Show
 
 Enter
-Type @30ms "GH_PAGER="
-Type@100ms "diffnav"
-Type @30ms " gh pr diff"
-Type@5ms " https://github.com/dlvhdr/gh-dash/pull/447 --color=never"
+Type @30ms "git different HEAD~5"
 Enter
 Sleep 1200ms
 

@@ -1,7 +1,5 @@
 debug.log
-diffnav
+git-different
 
-dist/
-.task/
 .pre-commit-config.yaml
 result
