@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"fmt"
 	"os/exec"
+	"slices"
 	"strings"
 )
 
@@ -28,7 +29,7 @@ type Commit struct {
 // only the new (destination) path is used, and the score suffix is stripped from
 // the status letter.
 func NameStatus(repoDir string, args []string) ([]FileStatus, error) {
-	cmdArgs := append([]string{"diff", "--name-status", "-z"}, args...)
+	cmdArgs := slices.Concat([]string{"diff", "--name-status", "-z"}, args)
 	out, err := runGit(repoDir, cmdArgs)
 	if err != nil {
 		return nil, err
@@ -38,7 +39,7 @@ func NameStatus(repoDir string, args []string) ([]FileStatus, error) {
 
 // DiffUnified runs "git diff <args>" and returns the raw unified diff output.
 func DiffUnified(repoDir string, args []string) (string, error) {
-	cmdArgs := append([]string{"diff"}, args...)
+	cmdArgs := slices.Concat([]string{"diff"}, args)
 	out, err := runGit(repoDir, cmdArgs)
 	if err != nil {
 		return "", err
@@ -50,7 +51,7 @@ func DiffUnified(repoDir string, args []string) (string, error) {
 // External diff tools may exit non-zero even on success, so this function only
 // returns an error when the command produces no output at all.
 func ExternalDiff(repoDir string, tool string, args []string) (string, error) {
-	cmdArgs := append([]string{"-c", "diff.external=" + tool, "diff", "--ext-diff"}, args...)
+	cmdArgs := slices.Concat([]string{"-c", "diff.external=" + tool, "diff", "--ext-diff"}, args)
 	cmd := exec.Command("git", cmdArgs...)
 	cmd.Dir = repoDir
 	var stdout, stderr bytes.Buffer
@@ -73,7 +74,7 @@ func ExternalDiff(repoDir string, tool string, args []string) (string, error) {
 // LogCommits runs "git log -z --reverse --format=%H%x00%s <args>" and returns
 // commits in chronological order (oldest first).
 func LogCommits(repoDir string, args []string) ([]Commit, error) {
-	cmdArgs := append([]string{"log", "-z", "--reverse", "--format=%H%x00%s"}, args...)
+	cmdArgs := slices.Concat([]string{"log", "-z", "--reverse", "--format=%H%x00%s"}, args)
 	out, err := runGit(repoDir, cmdArgs)
 	if err != nil {
 		return nil, err
@@ -81,8 +82,8 @@ func LogCommits(repoDir string, args []string) ([]Commit, error) {
 	return parseLogCommits(out), nil
 }
 
-// DiffTreeFiles runs "git diff-tree --no-commit-id -r -z <hash>" and returns
-// the list of files changed in the given commit.
+// DiffTreeFiles runs "git diff-tree --no-commit-id -r --name-status -z <hash>"
+// and returns the list of files changed in the given commit.
 func DiffTreeFiles(repoDir string, hash string) ([]FileStatus, error) {
 	out, err := runGit(
 		repoDir,
@@ -98,11 +99,18 @@ func DiffTreeFiles(repoDir string, hash string) ([]FileStatus, error) {
 // pager command. The pager string is split on spaces to support flags
 // (e.g. "delta --paging=never").
 func PipeToPager(repoDir string, pager string, args []string) (string, error) {
-	diffArgs := append([]string{"diff"}, args...)
+	diffArgs := slices.Concat([]string{"diff"}, args)
 	diffCmd := exec.Command("git", diffArgs...)
 	diffCmd.Dir = repoDir
 
 	pagerParts := strings.Fields(pager)
+	if len(pagerParts) == 0 {
+		diffOut, err := runGit(repoDir, diffArgs)
+		if err != nil {
+			return "", err
+		}
+		return diffOut, nil
+	}
 	pagerCmd := exec.Command(pagerParts[0], pagerParts[1:]...)
 
 	var pagerOut, pagerErr bytes.Buffer
