@@ -104,14 +104,14 @@ func New(input string, cfg config.Config) mainModel {
 		activePanel:       FileTreePanel,
 		config:            cfg,
 		iconStyle:         cfg.UI.Icons,
-		sideBySide:        cfg.UI.SideBySide,
+		sideBySide:        false,
 		watchEnabled:      cfg.Watch.Enabled,
 		watchCmd:          cfg.Watch.Cmd,
 		watchInterval:     cfg.Watch.Interval,
 	}
 	m.fileTree = filetree.New(cfg)
 	m.fileTree.SetSize(cfg.UI.FileTreeWidth, 0)
-	m.diffViewer = diffviewer.New(cfg.UI.SideBySide)
+	m.diffViewer = diffviewer.New(false)
 	m.help = help.New()
 	m.help.SetKeys(KeyGroups())
 
@@ -257,7 +257,7 @@ func (m mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmds = append(cmds, dfCmd)
 		case key.Matches(msg, keys.ToggleIconStyle):
 			m.cycleIconStyle()
-		case key.Matches(msg, keys.ToggleDiffView):
+		case key.Matches(msg, keys.ToggleCommitView):
 			m.sideBySide = !m.sideBySide
 			cmd = m.diffViewer.SetSideBySide(m.sideBySide)
 			cmds = append(cmds, cmd)

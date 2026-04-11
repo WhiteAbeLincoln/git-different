@@ -3,25 +3,25 @@ package ui
 import "charm.land/bubbles/v2/key"
 
 type KeyMap struct {
-	ExpandNode      key.Binding
-	CollapseNode    key.Binding
-	ToggleNode      key.Binding
-	Up              key.Binding
-	Down            key.Binding
-	NextFile        key.Binding
-	PrevFile        key.Binding
-	CtrlD           key.Binding
-	CtrlU           key.Binding
-	ToggleFileTree  key.Binding
-	Search          key.Binding
-	Quit            key.Binding
-	Copy            key.Binding
-	SwitchPanel     key.Binding
-	OpenInEditor    key.Binding
-	ToggleDiffView  key.Binding
-	ToggleIconStyle key.Binding
-	ToggleHelp      key.Binding
-	ToggleMessage   key.Binding
+	ExpandNode       key.Binding
+	CollapseNode     key.Binding
+	ToggleNode       key.Binding
+	Up               key.Binding
+	Down             key.Binding
+	NextFile         key.Binding
+	PrevFile         key.Binding
+	CtrlD            key.Binding
+	CtrlU            key.Binding
+	ToggleFileTree   key.Binding
+	Search           key.Binding
+	Quit             key.Binding
+	Copy             key.Binding
+	SwitchPanel      key.Binding
+	OpenInEditor     key.Binding
+	ToggleCommitView key.Binding
+	ToggleIconStyle  key.Binding
+	ToggleHelp       key.Binding
+	ToggleMessage    key.Binding
 }
 
 var keys = &KeyMap{
@@ -85,9 +85,9 @@ var keys = &KeyMap{
 		key.WithKeys("o"),
 		key.WithHelp("o", "open"),
 	),
-	ToggleDiffView: key.NewBinding(
-		key.WithKeys("s"),
-		key.WithHelp("s", "toggle side-by-side"),
+	ToggleCommitView: key.NewBinding(
+		key.WithKeys("c"),
+		key.WithHelp("c", "toggle commit view"),
 	),
 	ToggleIconStyle: key.NewBinding(
 		key.WithKeys("i"),
@@ -117,7 +117,7 @@ func KeyGroups() [][]key.Binding {
 		keys.Search,
 		keys.Copy,
 		keys.OpenInEditor,
-		keys.ToggleDiffView,
+		keys.ToggleCommitView,
 		keys.ToggleIconStyle,
 	}, {
 		keys.ToggleMessage,
