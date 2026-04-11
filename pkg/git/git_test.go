@@ -137,7 +137,7 @@ var _ = Describe("ExternalDiff", func() {
 		writeFile(repo, "my-diff", "#!/bin/sh\necho \"EXTERNAL_DIFF: $1\"\n")
 		run(repo, "chmod", "+x", tool)
 
-		out, err := git.ExternalDiff(repo, tool, nil)
+		out, err := git.ExternalDiff(repo, tool, 120, nil)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(out).To(ContainSubstring("EXTERNAL_DIFF:"))
 	})
@@ -150,7 +150,7 @@ var _ = Describe("ExternalDiff", func() {
 		writeFile(repo, "silent-diff", "#!/bin/sh\n# produces nothing\n")
 		run(repo, "chmod", "+x", tool)
 
-		_, err := git.ExternalDiff(repo, tool, nil)
+		_, err := git.ExternalDiff(repo, tool, 120, nil)
 		Expect(err).To(HaveOccurred())
 		Expect(err.Error()).To(ContainSubstring("no output"))
 	})

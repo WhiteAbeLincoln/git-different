@@ -1410,7 +1410,8 @@ func (m mainModel) renderDiff(args []string) tea.Cmd {
 		var output string
 		var err error
 		if m.config.UI.ExternalDiff != "" {
-			output, err = gitpkg.ExternalDiff(m.repoRoot, m.config.UI.ExternalDiff, args)
+			diffWidth := m.width - m.sidebarWidth()
+			output, err = gitpkg.ExternalDiff(m.repoRoot, m.config.UI.ExternalDiff, diffWidth, args)
 		} else {
 			output, err = gitpkg.PipeToPager(m.repoRoot, m.config.UI.Pager, args)
 		}

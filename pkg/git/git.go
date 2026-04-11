@@ -7,6 +7,7 @@ package git
 import (
 	"bytes"
 	"fmt"
+	"os"
 	"os/exec"
 	"slices"
 	"strings"
@@ -50,10 +51,18 @@ func DiffUnified(repoDir string, args []string) (string, error) {
 // ExternalDiff runs "git -c diff.external=<tool> diff --ext-diff <args>".
 // External diff tools may exit non-zero even on success, so this function only
 // returns an error when the command produces no output at all.
-func ExternalDiff(repoDir string, tool string, args []string) (string, error) {
+//
+// The width parameter sets DFT_WIDTH and COLUMNS environment variables so that
+// tools like difftastic can size their output to match the viewport.
+func ExternalDiff(repoDir string, tool string, width int, args []string) (string, error) {
 	cmdArgs := slices.Concat([]string{"-c", "diff.external=" + tool, "diff", "--ext-diff"}, args)
 	cmd := exec.Command("git", cmdArgs...)
 	cmd.Dir = repoDir
+	cmd.Env = append(os.Environ(),
+		fmt.Sprintf("DFT_WIDTH=%d", width),
+		fmt.Sprintf("COLUMNS=%d", width),
+		"DFT_COLOR=always",
+	)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
