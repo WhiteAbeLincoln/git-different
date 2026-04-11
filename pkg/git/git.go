@@ -73,13 +73,50 @@ func ExternalDiff(repoDir string, tool string, args []string) (string, error) {
 
 // LogCommits runs "git log -z --reverse --format=%H%x00%s <args>" and returns
 // commits in chronological order (oldest first).
+//
+// The args are converted from git-diff semantics to git-log semantics: a single
+// ref like "HEAD~5" becomes "HEAD~5..HEAD" because git-diff treats it as "diff
+// ref against working tree" while git-log treats it as "show all ancestors of ref".
 func LogCommits(repoDir string, args []string) ([]Commit, error) {
-	cmdArgs := slices.Concat([]string{"log", "-z", "--reverse", "--format=%H%x00%s"}, args)
+	logArgs := diffArgsToLogArgs(args)
+	cmdArgs := slices.Concat([]string{"log", "-z", "--reverse", "--format=%H%x00%s"}, logArgs)
 	out, err := runGit(repoDir, cmdArgs)
 	if err != nil {
 		return nil, err
 	}
 	return parseLogCommits(out), nil
+}
+
+// diffArgsToLogArgs converts git-diff positional args to git-log range args.
+// A single ref without ".." or "..." is converted to "ref..HEAD" so that
+// git-log returns the commits in the diff range rather than the ref's ancestors.
+func diffArgsToLogArgs(args []string) []string {
+	// Collect non-flag positional args (stop at "--")
+	var refs []string
+	for _, a := range args {
+		if a == "--" {
+			break
+		}
+		if strings.HasPrefix(a, "-") {
+			continue
+		}
+		refs = append(refs, a)
+	}
+
+	// Single ref without range notation → convert to ref..HEAD
+	if len(refs) == 1 && !strings.Contains(refs[0], "..") {
+		result := make([]string, len(args))
+		copy(result, args)
+		for i, a := range result {
+			if a == refs[0] {
+				result[i] = refs[0] + "..HEAD"
+				break
+			}
+		}
+		return result
+	}
+
+	return args
 }
 
 // DiffTreeFiles runs "git diff-tree --no-commit-id -r --name-status -z <hash>"

@@ -52,6 +52,7 @@ git different
 # with watch mode
 git different --watch --watch-interval 5s HEAD
 	`,
+	Args:               cobra.ArbitraryArgs,
 	DisableFlagParsing: false,
 }
 
@@ -123,22 +124,18 @@ func init() {
 				}
 			}()
 
-			if fileErr == nil {
-				log.SetOutput(logFile)
-				log.SetTimeFormat(time.Kitchen)
-				log.SetReportCaller(true)
-				log.SetLevel(log.DebugLevel)
-
-				log.SetOutput(logFile)
-				log.SetColorProfile(colorprofile.TrueColor)
-				wd, err := os.Getwd()
-				if err != nil {
-					fmt.Println("Error getting current working dir", err)
-					os.Exit(1)
-				}
-				log.Debug("Starting git-different", "logFile",
-					wd+string(os.PathSeparator)+logFile.Name())
+			log.SetOutput(logFile)
+			log.SetTimeFormat(time.Kitchen)
+			log.SetReportCaller(true)
+			log.SetLevel(log.DebugLevel)
+			log.SetColorProfile(colorprofile.TrueColor)
+			wd, err := os.Getwd()
+			if err != nil {
+				fmt.Println("Error getting current working dir", err)
+				os.Exit(1)
 			}
+			log.Debug("Starting git-different", "logFile",
+				wd+string(os.PathSeparator)+logFile.Name())
 		} else {
 			log.SetOutput(os.Stderr)
 			log.SetLevel(log.FatalLevel)
