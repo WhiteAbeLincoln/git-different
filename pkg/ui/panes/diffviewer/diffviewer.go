@@ -2,17 +2,13 @@ package diffviewer
 
 import (
 	"fmt"
-	"os"
-	"os/exec"
 	"strings"
 
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
-	"github.com/bluekeyes/go-gitdiff/gitdiff"
 	"github.com/charmbracelet/x/ansi"
 
-	"github.com/dlvhdr/diffnav/pkg/filenode"
 	"github.com/dlvhdr/diffnav/pkg/icons"
 	"github.com/dlvhdr/diffnav/pkg/ui/common"
 	"github.com/dlvhdr/diffnav/pkg/utils"
@@ -20,44 +16,28 @@ import (
 
 const dirHeaderHeight = 3
 
-type cachedNode struct {
+type Model struct {
+	preamble string
+	vp       viewport.Model
+	header   headerData
+	common.Common
+}
+
+type headerData struct {
 	path      string
-	files     []*gitdiff.File
+	isDir     bool
 	additions int64
 	deletions int64
-	diff      string
 }
 
-type nodeCache map[string]*cachedNode
-
-func cacheKey(path string, sideBySide bool) string {
-	if sideBySide {
-		return path + ":sbs"
+func New() Model {
+	return Model{
+		vp: viewport.Model{},
 	}
-	return path
 }
 
-type Model struct {
-	common.Common
-	vp         viewport.Model
-	file       *cachedNode
-	dir        *cachedNode
-	cache      nodeCache
-	sideBySide bool
-	preamble   string
-}
-
-// SetPreamble stores the preamble text (e.g. commit metadata from git show).
 func (m *Model) SetPreamble(preamble string) {
 	m.preamble = preamble
-}
-
-func New(sideBySide bool) Model {
-	return Model{
-		vp:         viewport.Model{},
-		sideBySide: sideBySide,
-		cache:      map[string]*cachedNode{},
-	}
 }
 
 func (m Model) Init() tea.Cmd {
@@ -65,39 +45,21 @@ func (m Model) Init() tea.Cmd {
 }
 
 func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
-	cmds := make([]tea.Cmd, 0)
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch msg.String() {
-		case "down", "j", "n":
-			break
-		case "up", "k", "N", "p":
-			break
+		case "down", "j", "n", "up", "k", "N", "p":
+			// Consumed by main model for tree navigation
 		default:
-			vp, vpCmd := m.vp.Update(msg)
-			cmds = append(cmds, vpCmd)
+			vp, cmd := m.vp.Update(msg)
 			m.vp = vp
+			return m, cmd
 		}
-
-	case diffContentMsg:
-		// Truncate lines to viewport width to prevent ANSI escape overflow.
-		lines := strings.Split(msg.text, "\n")
-		for i, line := range lines {
-			if lipgloss.Width(line) > m.vp.Width() && m.vp.Width() > 0 {
-				lines[i] = ansi.Truncate(line, m.vp.Width(), "")
-			}
-		}
-		diff := strings.Join(lines, "\n")
-		if _, ok := m.cache[msg.cacheKey]; ok {
-			m.cache[msg.cacheKey].diff = diff
-		}
-		m.vp.SetContent(diff)
 	}
-
-	return m, tea.Batch(cmds...)
+	return m, nil
 }
 
-const scrollbarWidth = 3 // 1 space + 1 scrollbar character + 1 padding
+const scrollbarWidth = 3
 
 func (m Model) View() string {
 	vpView := m.vp.View()
@@ -108,78 +70,64 @@ func (m Model) View() string {
 	return lipgloss.JoinVertical(lipgloss.Left, m.headerView(), vpView)
 }
 
-func (m *Model) SetSize(width, height int) tea.Cmd {
+// SetContent sets the rendered diff text directly into the viewport.
+func (m *Model) SetContent(content string) {
+	lines := strings.Split(content, "\n")
+	for i, line := range lines {
+		if lipgloss.Width(line) > m.vp.Width() && m.vp.Width() > 0 {
+			lines[i] = ansi.Truncate(line, m.vp.Width(), "")
+		}
+	}
+	m.vp.SetContent(strings.Join(lines, "\n"))
+}
+
+// SetFileHeader configures the header for a single file diff.
+func (m *Model) SetFileHeader(path string, additions, deletions int64) {
+	m.header = headerData{path: path, isDir: false, additions: additions, deletions: deletions}
+}
+
+// SetDirHeader configures the header for a directory diff.
+func (m *Model) SetDirHeader(path string, additions, deletions int64) {
+	m.header = headerData{path: path, isDir: true, additions: additions, deletions: deletions}
+}
+
+func (m *Model) SetSize(width, height int) {
 	m.Width = width
 	m.Height = height
 	m.vp.SetWidth(m.contentWidth())
 	m.vp.SetHeight(m.Height - dirHeaderHeight)
-	m.ClearCache()
-	return m.diff()
 }
 
 func (m Model) contentWidth() int {
 	return m.Width - scrollbarWidth
 }
 
-func (m *Model) diff() tea.Cmd {
-	if m.file != nil {
-		key := cacheKey(m.file.path, m.sideBySide)
-		if cached, ok := m.cache[key]; ok && cached.diff != "" {
-			m.file = cached
-			m.vp.SetContent(cached.diff)
-			return nil
-		}
-		node := &cachedNode{
-			path:      m.file.path,
-			files:     m.file.files,
-			additions: m.file.additions,
-			deletions: m.file.deletions,
-		}
-		m.file = node
-		m.cache[key] = node
-		return diffFile(node, m.contentWidth(), m.sideBySide)
-	} else if m.dir != nil {
-		key := cacheKey(m.dir.path, m.sideBySide)
-		if cached, ok := m.cache[key]; ok && cached.diff != "" {
-			m.dir = cached
-			m.vp.SetContent(cached.diff)
-			return nil
-		}
-		node := &cachedNode{
-			path:      m.dir.path,
-			files:     m.dir.files,
-			additions: m.dir.additions,
-			deletions: m.dir.deletions,
-		}
-		m.dir = node
-		m.cache[key] = node
-		preamble := ""
-		if m.dir.path == "/" {
-			preamble = m.preamble
-		}
-		return diffDir(node, m.contentWidth(), m.sideBySide, preamble)
-	}
+func (m *Model) GoToTop() {
+	m.vp.GotoTop()
+}
 
-	return nil
+func (m *Model) ScrollUp(lines int) {
+	m.vp.ScrollUp(lines)
+}
+
+func (m *Model) ScrollDown(lines int) {
+	m.vp.ScrollDown(lines)
 }
 
 func (m Model) headerView() string {
-	if m.dir != nil {
+	if m.header.isDir {
 		return m.dirHeaderView()
 	}
-
-	if m.file == nil || len(m.file.files) != 1 {
+	if m.header.path == "" {
 		return ""
 	}
-	name := m.file.path
+
 	base := lipgloss.NewStyle()
-
-	fileIcon := icons.GetIcon(name, false)
+	fileIcon := icons.GetIcon(m.header.path, false)
 	prefix := base.Render(fileIcon) + base.Render(" ")
-	name = utils.TruncateString(name, m.Width-lipgloss.Width(prefix))
+	name := utils.TruncateString(m.header.path, m.Width-lipgloss.Width(prefix))
 	top := prefix + base.Bold(true).Render(name)
-
-	bottom := filenode.ViewFileDiffStats(m.file.files[0], base)
+	bottom := viewDiffStats(m.header.additions, m.header.deletions, base)
 
 	return base.
 		Width(m.Width).
@@ -192,11 +140,11 @@ func (m Model) headerView() string {
 
 func (m Model) dirHeaderView() string {
 	base := lipgloss.NewStyle().Foreground(lipgloss.Blue)
-	prefix := base.Render(" ")
-	name := utils.TruncateString(m.dir.path, m.Width-lipgloss.Width(prefix))
-
+	prefix := base.Render(" ")
+	name := utils.TruncateString(m.header.path, m.Width-lipgloss.Width(prefix))
 	top := prefix + base.Bold(true).Render(name)
-	bottom := filenode.ViewDiffStats(m.dir.additions, m.dir.deletions, base)
+	bottom := viewDiffStats(m.header.additions, m.header.deletions, base)
+
 	return base.
 		Width(m.Width).
 		Height(dirHeaderHeight - 1).
@@ -206,153 +154,15 @@ func (m Model) dirHeaderView() string {
 		Render(lipgloss.JoinVertical(lipgloss.Left, top, bottom))
 }
 
-func (m Model) SetFilePatch(file *gitdiff.File) (Model, tea.Cmd) {
-	m.dir = nil
-
-	fname := filenode.GetFileName(file)
-	key := cacheKey(fname, m.sideBySide)
-	if cached, ok := m.cache[key]; ok {
-		m.file = cached
-		m.vp.SetContent(cached.diff)
-		return m, nil
+func viewDiffStats(added, deleted int64, base lipgloss.Style) string {
+	var parts []string
+	if added > 0 {
+		parts = append(parts, base.Foreground(lipgloss.Green).Render(fmt.Sprintf("+%d", added)))
 	}
-
-	files := make([]*gitdiff.File, 1)
-	files[0] = file
-	additions, deletions := filenode.DiffStats(file)
-	m.file = &cachedNode{
-		path:      fname,
-		files:     files,
-		additions: additions,
-		deletions: deletions,
+	if deleted > 0 {
+		parts = append(parts, base.Foreground(lipgloss.Red).Render(fmt.Sprintf("-%d", deleted)))
 	}
-	m.cache[key] = m.file
-
-	return m, diffFile(m.file, m.contentWidth(), m.sideBySide)
-}
-
-func (m Model) SetDirPatch(dirPath string, files []*gitdiff.File) (Model, tea.Cmd) {
-	m.file = nil
-
-	key := cacheKey(dirPath, m.sideBySide)
-	if cached, ok := m.cache[key]; ok {
-		m.dir = cached
-		m.vp.SetContent(cached.diff)
-		return m, nil
-	}
-
-	var added, deleted int64
-	for _, file := range files {
-		na, nd := filenode.DiffStats(file)
-		added += na
-		deleted += nd
-	}
-	m.dir = &cachedNode{
-		path:      dirPath,
-		files:     files,
-		additions: added,
-		deletions: deleted,
-	}
-	m.cache[key] = m.dir
-	preamble := ""
-	if dirPath == "/" {
-		preamble = m.preamble
-	}
-	return m, diffDir(m.dir, m.contentWidth(), m.sideBySide, preamble)
-}
-
-func (m *Model) GoToTop() {
-	m.vp.GotoTop()
-}
-
-// SetSideBySide updates the diff view mode and re-renders.
-func (m *Model) SetSideBySide(sideBySide bool) tea.Cmd {
-	m.sideBySide = sideBySide
-	return m.diff()
-}
-
-// ScrollUp scrolls the viewport up by the given number of lines.
-func (m *Model) ScrollUp(lines int) {
-	m.vp.ScrollUp(lines)
-}
-
-// ScrollDown scrolls the viewport down by the given number of lines.
-func (m *Model) ScrollDown(lines int) {
-	m.vp.ScrollDown(lines)
-}
-
-func diffFile(node *cachedNode, width int, sideBySide bool) tea.Cmd {
-	if width == 0 || node == nil || len(node.files) != 1 {
-		return nil
-	}
-
-	file := node.files[0]
-	key := cacheKey(node.path, sideBySide)
-	return func() tea.Msg {
-		// Only use side-by-side if preference is true AND file is not new/deleted
-		useSideBySide := sideBySide && !file.IsNew && !file.IsDelete
-		args := []string{
-			"--paging=never",
-			fmt.Sprintf("-w=%d", width),
-			fmt.Sprintf("--max-line-length=%d", width),
-		}
-		if useSideBySide {
-			args = append(args, "--side-by-side")
-		}
-		deltac := exec.Command("delta", args...)
-		deltac.Env = os.Environ()
-		deltac.Stdin = strings.NewReader(file.String() + "\n")
-		out, err := deltac.Output()
-		if err != nil {
-			return common.ErrMsg{Err: err}
-		}
-		return diffContentMsg{cacheKey: key, text: string(out)}
-	}
-}
-
-func diffDir(dir *cachedNode, width int, sideBySide bool, preamble string) tea.Cmd {
-	if width == 0 || dir == nil {
-		return nil
-	}
-	key := cacheKey(dir.path, sideBySide)
-	return func() tea.Msg {
-		s := common.BgStyles[common.Selected]
-		c := common.LipglossColorToHex(common.Colors[common.Selected])
-		useSideBySide := sideBySide
-		args := []string{
-			"--paging=never",
-			fmt.Sprintf("--file-modified-label=%s",
-				utils.RemoveReset(s.Foreground(lipgloss.Yellow).Render(" "))),
-			fmt.Sprintf("--file-removed-label=%s",
-				utils.RemoveReset(s.Foreground(lipgloss.Red).Render(" "))),
-			fmt.Sprintf("--file-added-label=%s",
-				utils.RemoveReset(s.Foreground(lipgloss.Green).Render(" "))),
-			fmt.Sprintf("--file-style='%s bold %s'", c, c),
-			fmt.Sprintf("--file-decoration-style='%s box %s'", c, c),
-			fmt.Sprintf("-w=%d", width),
-			fmt.Sprintf("--max-line-length=%d", width),
-		}
-		if useSideBySide {
-			args = append(args, "--side-by-side")
-		}
-		deltac := exec.Command("delta", args...)
-		deltac.Env = os.Environ()
-		strs := strings.Builder{}
-		for _, file := range dir.files {
-			strs.WriteString(file.String())
-		}
-		deltac.Stdin = strings.NewReader(strs.String() + "\n")
-		out, err := deltac.Output()
-		if err != nil {
-			return common.ErrMsg{Err: err}
-		}
-
-		text := string(out)
-		if preamble != "" {
-			text = renderPreamble(preamble) + "\n" + text
-		}
-		return diffContentMsg{cacheKey: key, text: text}
-	}
+	return strings.Join(parts, base.Render(" "))
 }
 
 func renderPreamble(preamble string) string {
@@ -385,21 +195,4 @@ func renderPreamble(preamble string) string {
 	}
 
 	return strings.Join(out, "\n")
-}
-
-type diffContentMsg struct {
-	cacheKey string
-	text     string
-}
-
-func (m *Model) ClearCache() {
-	m.cache = make(nodeCache)
-}
-
-func (m *Model) RootDiffStats() (int64, int64) {
-	if item, ok := m.cache[cacheKey("/", m.sideBySide)]; ok {
-		return item.additions, item.deletions
-	}
-
-	return 0, 0
 }
