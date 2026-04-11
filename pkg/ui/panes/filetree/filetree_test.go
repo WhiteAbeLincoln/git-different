@@ -4,11 +4,11 @@ import (
 	"os"
 	"testing"
 
+	"github.com/WhiteAbeLincoln/git-different/pkg/config"
+	"github.com/WhiteAbeLincoln/git-different/pkg/constants"
+	"github.com/WhiteAbeLincoln/git-different/pkg/dirnode"
+	"github.com/WhiteAbeLincoln/git-different/pkg/filenode"
 	"github.com/bluekeyes/go-gitdiff/gitdiff"
-	"github.com/dlvhdr/diffnav/pkg/config"
-	"github.com/dlvhdr/diffnav/pkg/constants"
-	"github.com/dlvhdr/diffnav/pkg/dirnode"
-	"github.com/dlvhdr/diffnav/pkg/filenode"
 )
 
 // .

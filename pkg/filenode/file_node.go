@@ -9,9 +9,9 @@ import (
 	"charm.land/lipgloss/v2/tree"
 	"github.com/bluekeyes/go-gitdiff/gitdiff"
 
-	"github.com/dlvhdr/diffnav/pkg/config"
-	"github.com/dlvhdr/diffnav/pkg/icons"
-	"github.com/dlvhdr/diffnav/pkg/utils"
+	"github.com/WhiteAbeLincoln/git-different/pkg/config"
+	"github.com/WhiteAbeLincoln/git-different/pkg/icons"
+	"github.com/WhiteAbeLincoln/git-different/pkg/utils"
 )
 
 // Icon style constants.

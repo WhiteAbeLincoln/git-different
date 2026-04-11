@@ -4,3 +4,4 @@ diffnav
 dist/
 .task/
 .pre-commit-config.yaml
+result

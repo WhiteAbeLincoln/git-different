@@ -1,4 +1,4 @@
-module github.com/dlvhdr/diffnav
+module github.com/WhiteAbeLincoln/git-different
 
 go 1.25.8
 

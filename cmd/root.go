@@ -16,10 +16,10 @@ import (
 	"github.com/charmbracelet/colorprofile"
 	zone "github.com/lrstanley/bubblezone/v2"
 
-	"github.com/dlvhdr/diffnav/pkg/config"
-	gitpkg "github.com/dlvhdr/diffnav/pkg/git"
-	"github.com/dlvhdr/diffnav/pkg/ui"
-	"github.com/dlvhdr/diffnav/pkg/version"
+	"github.com/WhiteAbeLincoln/git-different/pkg/config"
+	gitpkg "github.com/WhiteAbeLincoln/git-different/pkg/git"
+	"github.com/WhiteAbeLincoln/git-different/pkg/ui"
+	"github.com/WhiteAbeLincoln/git-different/pkg/version"
 )
 
 //go:embed logo-diff-part.txt

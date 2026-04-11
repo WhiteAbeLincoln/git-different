@@ -14,12 +14,12 @@ import (
 	"github.com/atotto/clipboard"
 	"github.com/bluekeyes/go-gitdiff/gitdiff"
 
-	"github.com/dlvhdr/diffnav/pkg/config"
-	"github.com/dlvhdr/diffnav/pkg/constants"
-	"github.com/dlvhdr/diffnav/pkg/dirnode"
-	"github.com/dlvhdr/diffnav/pkg/filenode"
-	"github.com/dlvhdr/diffnav/pkg/ui/common"
-	"github.com/dlvhdr/diffnav/pkg/utils"
+	"github.com/WhiteAbeLincoln/git-different/pkg/config"
+	"github.com/WhiteAbeLincoln/git-different/pkg/constants"
+	"github.com/WhiteAbeLincoln/git-different/pkg/dirnode"
+	"github.com/WhiteAbeLincoln/git-different/pkg/filenode"
+	"github.com/WhiteAbeLincoln/git-different/pkg/ui/common"
+	"github.com/WhiteAbeLincoln/git-different/pkg/utils"
 )
 
 type Model struct {

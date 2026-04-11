@@ -32,6 +32,21 @@
         };
       });
 
+      packages = forAllSystems (system: pkgs: {
+        default = pkgs.buildGoModule {
+          pname = "git-different";
+          version = "0.1.0";
+          src = ./.;
+          vendorHash = "sha256-X22jl+ech8IsGTfD6u0vW7EBYjZlDtINKvpHhM4vrkc=";
+          nativeCheckInputs = [ pkgs.git ];
+          preCheck = ''
+            export HOME=$TMPDIR
+            git config --global user.email "test@test.com"
+            git config --global user.name "Test"
+          '';
+        };
+      });
+
       devShells = forAllSystems (system: pkgs: {
         default = pkgs.mkShell {
           inherit (self.checks.${system}.pre-commit-check) shellHook;
@@ -41,6 +56,8 @@
             gopls
             golangci-lint
             betteralign
+            svu
+            go-task
           ];
         };
       });

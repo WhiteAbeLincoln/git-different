@@ -9,9 +9,9 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
-	"github.com/dlvhdr/diffnav/pkg/icons"
-	"github.com/dlvhdr/diffnav/pkg/ui/common"
-	"github.com/dlvhdr/diffnav/pkg/utils"
+	"github.com/WhiteAbeLincoln/git-different/pkg/icons"
+	"github.com/WhiteAbeLincoln/git-different/pkg/ui/common"
+	"github.com/WhiteAbeLincoln/git-different/pkg/utils"
 )
 
 const dirHeaderHeight = 3

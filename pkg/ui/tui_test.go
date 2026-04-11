@@ -9,7 +9,7 @@ import (
 	"github.com/bluekeyes/go-gitdiff/gitdiff"
 	zone "github.com/lrstanley/bubblezone/v2"
 
-	"github.com/dlvhdr/diffnav/pkg/config"
+	"github.com/WhiteAbeLincoln/git-different/pkg/config"
 )
 
 func TestSearchUpdateEnterWithNoResultsDoesNotPanic(t *testing.T) {
