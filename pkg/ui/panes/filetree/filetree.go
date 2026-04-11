@@ -161,8 +161,6 @@ func (m *Model) rebuildCommitTree(commitFiles []CommitFiles) {
 
 	root, _ = truncateTree(root, 0, 0, 0, m.cfg, m.t.Width())
 	m.t.SetNodes(root)
-	m.t.SetWidth(m.t.Width())
-	m.updateStyles()
 }
 
 func (m *Model) Down() {

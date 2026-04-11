@@ -17,5 +17,9 @@ type CommitNode struct {
 }
 
 func (c *CommitNode) String() string {
-	return c.Hash[:7] + " " + c.Subject
+	hash := c.Hash
+	if len(hash) > 7 {
+		hash = hash[:7]
+	}
+	return hash + " " + c.Subject
 }
