@@ -374,6 +374,48 @@ func (m mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case diffRenderedMsg:
 		m.diffViewer.SetContent(string(msg))
 
+	case fileCommitInfoMsg:
+		// Cache the result.
+		if msg.commitView {
+			if m.commitPreambles == nil {
+				m.commitPreambles = make(map[string]string)
+			}
+			m.commitPreambles[msg.key] = msg.preamble
+		} else {
+			if m.fileCommitCache == nil {
+				m.fileCommitCache = make(map[string]string)
+			}
+			m.fileCommitCache[msg.key] = msg.preamble
+		}
+
+		// Only update header if the user is still viewing the relevant node.
+		updateHeader := false
+		if msg.commitView {
+			if m.commitView {
+				// Check if still under the same commit section.
+				if hash := m.fileTree.AncestorCommitHash(); hash == msg.key {
+					updateHeader = true
+				}
+				// Also match if a CommitNode itself is selected.
+				if cn, ok := m.fileTree.GetCurrNode().GivenValue().(*dirnode.CommitNode); ok {
+					if cn.Hash == msg.key {
+						updateHeader = true
+					}
+				}
+			}
+		} else {
+			if !m.commitView {
+				if fn, ok := m.fileTree.GetCurrNode().GivenValue().(*filenode.FileNode); ok {
+					if filenode.GetFileName(fn.File) == msg.key {
+						updateHeader = true
+					}
+				}
+			}
+		}
+		if updateHeader {
+			m.setHeaderFromPreamble(msg.preamble, msg.branch)
+		}
+
 	case common.ErrMsg:
 		fmt.Printf("Error: %v\n", msg.Err)
 		log.Fatal(msg.Err)
@@ -740,6 +782,13 @@ func commitSubject(preamble string) string {
 		return trimmed
 	}
 	return ""
+}
+
+// setHeaderFromPreamble updates the cached header state from a preamble string.
+func (m *mainModel) setHeaderFromPreamble(preamble, branch string) {
+	m.headerPreamble = preamble
+	m.headerBranch = branch
+	m.cachedMeta = parseCommitMeta(preamble)
 }
 
 func (m mainModel) viewHeader() string {
@@ -1448,12 +1497,29 @@ func (m mainModel) setNodeDiff(node *tree.Node) (mainModel, tea.Cmd) {
 		additions, deletions := filenode.DiffStats(val.File)
 		m.diffViewer.SetFileHeader(fname, additions, deletions)
 
-		// In commit-segmented mode, diff within the specific commit
 		args := m.diffArgsForFile(fname)
-		return m, m.renderDiff(args)
+
+		// Update header to reflect the commit that last touched this file.
+		var headerCmd tea.Cmd
+		if m.commitView {
+			if hash := m.fileTree.AncestorCommitHash(); hash != "" {
+				if cached, ok := m.commitPreambles[hash]; ok {
+					m.setHeaderFromPreamble(cached, resolveBranch(cached))
+				} else {
+					headerCmd = m.fetchCommitHeaderInfo(hash)
+				}
+			}
+		} else if gitpkg.HasRefs(m.gitArgs) {
+			if cached, ok := m.fileCommitCache[fname]; ok {
+				m.setHeaderFromPreamble(cached, resolveBranch(cached))
+			} else {
+				headerCmd = m.fetchFileCommitInfo(fname)
+			}
+		}
+
+		return m, tea.Batch(m.renderDiff(args), headerCmd)
 
 	case *dirnode.CommitNode:
-		// Show all changes in this commit
 		files := m.fileTree.GetCurrNodeDesendantDiffs()
 		var added, deleted int64
 		for _, file := range files {
@@ -1464,7 +1530,16 @@ func (m mainModel) setNodeDiff(node *tree.Node) (mainModel, tea.Cmd) {
 		header := val.Hash[:7] + " " + val.Subject
 		m.diffViewer.SetDirHeader(header, added, deleted)
 		args := []string{val.Hash + "~1.." + val.Hash}
-		return m, m.renderDiff(args)
+
+		// Update header to reflect this commit.
+		var headerCmd tea.Cmd
+		if cached, ok := m.commitPreambles[val.Hash]; ok {
+			m.setHeaderFromPreamble(cached, resolveBranch(cached))
+		} else {
+			headerCmd = m.fetchCommitHeaderInfo(val.Hash)
+		}
+
+		return m, tea.Batch(m.renderDiff(args), headerCmd)
 
 	case string, *dirnode.DirNode:
 		files := m.fileTree.GetCurrNodeDesendantDiffs()
@@ -1482,10 +1557,19 @@ func (m mainModel) setNodeDiff(node *tree.Node) (mainModel, tea.Cmd) {
 
 		// In commit-segmented mode, scope to the ancestor commit
 		var baseArgs []string
+		var headerCmd tea.Cmd
 		if m.commitView {
 			if hash := m.fileTree.AncestorCommitHash(); hash != "" {
 				baseArgs = []string{hash + "~1.." + hash}
+				if cached, ok := m.commitPreambles[hash]; ok {
+					m.setHeaderFromPreamble(cached, resolveBranch(cached))
+				} else {
+					headerCmd = m.fetchCommitHeaderInfo(hash)
+				}
 			}
+		} else {
+			// Reset header to range-level info for directories
+			m.setHeaderFromPreamble(m.preamble, m.commitBranch)
 		}
 		if baseArgs == nil {
 			baseArgs = append(baseArgs, m.gitArgs...)
@@ -1493,7 +1577,7 @@ func (m mainModel) setNodeDiff(node *tree.Node) (mainModel, tea.Cmd) {
 		if fullPath != "/" {
 			baseArgs = append(baseArgs, "--", fullPath+"/")
 		}
-		return m, m.renderDiff(baseArgs)
+		return m, tea.Batch(m.renderDiff(baseArgs), headerCmd)
 	}
 	return m, nil
 }
@@ -1507,6 +1591,40 @@ func (m mainModel) diffArgsForFile(fname string) []string {
 		}
 	}
 	return append(m.gitArgs, "--", fname)
+}
+
+// fetchFileCommitInfo returns a command that looks up the most recent commit
+// in the diff range that touched the given file, for header display.
+func (m mainModel) fetchFileCommitInfo(fname string) tea.Cmd {
+	return func() tea.Msg {
+		preamble, err := gitpkg.FileLogPreamble(m.repoRoot, m.gitArgs, fname)
+		if err != nil || preamble == "" {
+			return nil
+		}
+		return fileCommitInfoMsg{
+			key:      fname,
+			preamble: preamble,
+			branch:   resolveBranch(preamble),
+		}
+	}
+}
+
+// fetchCommitHeaderInfo returns a command that looks up commit metadata
+// for header display in commit view.
+func (m mainModel) fetchCommitHeaderInfo(hash string) tea.Cmd {
+	return func() tea.Msg {
+		preamble, err := gitpkg.CommitPreamble(m.repoRoot, hash)
+		if err != nil {
+			return nil
+		}
+		preamble = strings.TrimSpace(preamble)
+		return fileCommitInfoMsg{
+			key:        hash,
+			preamble:   preamble,
+			branch:     resolveBranch(preamble),
+			commitView: true,
+		}
+	}
 }
 
 func (m mainModel) rebuildCommitSegmentedTree() (mainModel, tea.Cmd) {
@@ -1557,6 +1675,13 @@ func (m mainModel) renderDiff(args []string) tea.Cmd {
 }
 
 type diffRenderedMsg string
+
+type fileCommitInfoMsg struct {
+	key        string // file path (non-commit view) or commit hash (commit view)
+	preamble   string
+	branch     string
+	commitView bool
+}
 
 func (m *mainModel) setSearchResults() {
 	filtered := make([]string, 0)
