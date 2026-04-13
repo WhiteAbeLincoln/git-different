@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -181,6 +182,82 @@ var _ = Describe("LogCommits", func() {
 		commits, err := git.LogCommits(repo, []string{"HEAD..HEAD"})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(commits).To(BeEmpty())
+	})
+})
+
+var _ = Describe("LogPreamble", func() {
+	It("returns fuller commit info for a commit range", func() {
+		repo := initRepo()
+		writeFile(repo, "a.txt", "a\n")
+		run(repo, "git", "add", ".")
+		run(repo, "git", "commit", "-m", "add a")
+
+		out, err := git.LogPreamble(repo, []string{"HEAD~1..HEAD"})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(out).To(ContainSubstring("commit "))
+		Expect(out).To(ContainSubstring("Author:"))
+		Expect(out).To(ContainSubstring("AuthorDate:"))
+		Expect(out).To(ContainSubstring("add a"))
+	})
+
+	It("converts single ref to range like LogCommits", func() {
+		repo := initRepo()
+		writeFile(repo, "a.txt", "a\n")
+		run(repo, "git", "add", ".")
+		run(repo, "git", "commit", "-m", "add a")
+
+		out, err := git.LogPreamble(repo, []string{"HEAD~1"})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(out).To(ContainSubstring("add a"))
+		// Should NOT include the initial commit
+		Expect(out).NotTo(ContainSubstring("initial commit"))
+	})
+})
+
+var _ = Describe("CommitPreamble", func() {
+	It("returns fuller info for a single commit", func() {
+		repo := initRepo()
+		writeFile(repo, "a.txt", "a\n")
+		run(repo, "git", "add", ".")
+		run(repo, "git", "commit", "-m", "add a")
+
+		cmd := exec.Command("git", "rev-parse", "HEAD")
+		cmd.Dir = repo
+		hashBytes, err := cmd.Output()
+		Expect(err).NotTo(HaveOccurred())
+		hash := strings.TrimSpace(string(hashBytes))
+
+		out, err := git.CommitPreamble(repo, hash)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(out).To(ContainSubstring("commit " + hash))
+		Expect(out).To(ContainSubstring("Author:"))
+		Expect(out).To(ContainSubstring("add a"))
+	})
+})
+
+var _ = Describe("HasRefs", func() {
+	It("returns false for empty args", func() {
+		Expect(git.HasRefs(nil)).To(BeFalse())
+		Expect(git.HasRefs([]string{})).To(BeFalse())
+	})
+
+	It("returns false for flag-only args", func() {
+		Expect(git.HasRefs([]string{"--staged"})).To(BeFalse())
+		Expect(git.HasRefs([]string{"--cached", "-p"})).To(BeFalse())
+	})
+
+	It("returns true when a ref is present", func() {
+		Expect(git.HasRefs([]string{"HEAD~1"})).To(BeTrue())
+		Expect(git.HasRefs([]string{"HEAD~3..HEAD"})).To(BeTrue())
+		Expect(git.HasRefs([]string{"main"})).To(BeTrue())
+	})
+
+	It("ignores positional args after --", func() {
+		Expect(git.HasRefs([]string{"--", "file.txt"})).To(BeFalse())
+	})
+
+	It("detects refs mixed with flags", func() {
+		Expect(git.HasRefs([]string{"--stat", "HEAD~1"})).To(BeTrue())
 	})
 })
 

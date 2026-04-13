@@ -128,6 +128,45 @@ func diffArgsToLogArgs(args []string) []string {
 	return args
 }
 
+// LogPreamble runs "git log --format=fuller --decorate <args>" and returns the
+// output, suitable for use as a commit info preamble when git-diff output lacks
+// one (which is always — git-diff never includes commit headers).
+func LogPreamble(repoDir string, args []string) (string, error) {
+	logArgs := diffArgsToLogArgs(args)
+	cmdArgs := slices.Concat([]string{"log", "--format=fuller", "--decorate"}, logArgs)
+	out, err := runGit(repoDir, cmdArgs)
+	if err != nil {
+		return "", err
+	}
+	return out, nil
+}
+
+// CommitPreamble runs "git show --format=fuller --decorate --no-patch <hash>"
+// and returns the commit metadata for a single commit.
+func CommitPreamble(repoDir string, hash string) (string, error) {
+	cmdArgs := []string{"show", "--format=fuller", "--decorate", "--no-patch", hash}
+	out, err := runGit(repoDir, cmdArgs)
+	if err != nil {
+		return "", err
+	}
+	return out, nil
+}
+
+// HasRefs reports whether args contains at least one non-flag positional
+// argument before the "--" separator, indicating the diff references specific
+// commits rather than the working tree.
+func HasRefs(args []string) bool {
+	for _, a := range args {
+		if a == "--" {
+			return false
+		}
+		if !strings.HasPrefix(a, "-") {
+			return true
+		}
+	}
+	return false
+}
+
 // DiffTreeFiles runs "git diff-tree --no-commit-id -r --name-status -z <hash>"
 // and returns the list of files changed in the given commit.
 func DiffTreeFiles(repoDir string, hash string) ([]FileStatus, error) {

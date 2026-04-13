@@ -65,6 +65,7 @@ const (
 )
 
 type mainModel struct {
+	commitPreambles   map[string]string
 	cachedMeta        commitMeta
 	repoRoot          string
 	lastDiffOutput    string
@@ -72,16 +73,16 @@ type mainModel struct {
 	preamble          string
 	commitBranch      string
 	pendingCursorPath string
-	help              help.Model
 	gitArgs           []string
 	commits           []gitpkg.Commit
 	files             []*gitdiff.File
 	filtered          []string
-	fileTree          filetree.Model
 	search            textinput.Model
 	resultsVp         viewport.Model
 	messageVp         viewport.Model
+	help              help.Model
 	config            config.Config
+	fileTree          filetree.Model
 	diffViewer        diffviewer.Model
 	width             int
 	height            int
@@ -183,7 +184,7 @@ func (m mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.messageOpen = false
 			return m, tea.Batch(cmds...)
 		case key.Matches(msg, keys.ToggleMessage):
-			if m.preamble != "" {
+			if m.activePreamble() != "" {
 				m.messageOpen = !m.messageOpen
 				m.helpOpen = false
 				if m.messageOpen {
@@ -596,8 +597,17 @@ func (m mainModel) fetchFileTree() tea.Msg {
 		return common.ErrMsg{Err: err}
 	}
 	sortFiles(files)
-	branch := resolveBranch(preamble)
 	commits, _ := gitpkg.LogCommits(m.repoRoot, m.gitArgs)
+
+	// git-diff never includes commit headers, so fetch them via git-log
+	// when the args reference specific commits.
+	if preamble == "" && len(commits) > 0 && gitpkg.HasRefs(m.gitArgs) {
+		if full, err := gitpkg.LogPreamble(m.repoRoot, m.gitArgs); err == nil {
+			preamble = full
+		}
+	}
+
+	branch := resolveBranch(preamble)
 	return fileTreeMsg{files: files, preamble: preamble, branch: branch, commits: commits}
 }
 
@@ -830,6 +840,33 @@ func (m mainModel) footerView() string {
 		Render(lipgloss.JoinHorizontal(lipgloss.Top, parts...))
 }
 
+// activePreamble returns the preamble text appropriate for the current view.
+// In commit view it returns info for just the focused commit; otherwise it
+// returns the full range preamble.
+func (m *mainModel) activePreamble() string {
+	if !m.commitView {
+		return m.preamble
+	}
+	hash := m.fileTree.AncestorCommitHash()
+	if hash == "" {
+		return m.preamble
+	}
+	if cached, ok := m.commitPreambles[hash]; ok {
+		return cached
+	}
+	// Fetch and cache on first access.
+	info, err := gitpkg.CommitPreamble(m.repoRoot, hash)
+	if err != nil {
+		return m.preamble
+	}
+	info = strings.TrimSpace(info)
+	if m.commitPreambles == nil {
+		m.commitPreambles = make(map[string]string)
+	}
+	m.commitPreambles[hash] = info
+	return info
+}
+
 func (m *mainModel) messageView() string {
 	dim := lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
 	yellow := lipgloss.NewStyle().Foreground(lipgloss.Yellow)
@@ -837,7 +874,7 @@ func (m *mainModel) messageView() string {
 	var out []string
 
 	// Render preamble lines.
-	for line := range strings.SplitSeq(m.preamble, "\n") {
+	for line := range strings.SplitSeq(m.activePreamble(), "\n") {
 		switch {
 		case strings.HasPrefix(line, "commit "):
 			out = append(
@@ -1201,7 +1238,7 @@ func (m mainModel) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 				m.messageOpen = false
 				return m, nil
 			}
-			if zone.Get(zoneHeader).InBounds(msg) && m.preamble != "" {
+			if zone.Get(zoneHeader).InBounds(msg) && m.activePreamble() != "" {
 				m.messageOpen = !m.messageOpen
 				m.helpOpen = false
 				if m.messageOpen {
