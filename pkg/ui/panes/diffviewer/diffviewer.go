@@ -114,6 +114,11 @@ func (m *Model) ScrollDown(lines int) {
 	m.vp.ScrollDown(lines)
 }
 
+// GetContent returns the full viewport content (ANSI-styled).
+func (m Model) GetContent() string {
+	return m.vp.GetContent()
+}
+
 func (m Model) headerView() string {
 	if m.header.isDir {
 		return m.dirHeaderView()

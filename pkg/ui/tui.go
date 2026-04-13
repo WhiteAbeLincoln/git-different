@@ -297,6 +297,11 @@ func (m mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if cmd != nil {
 				cmds = append(cmds, cmd)
 			}
+		case key.Matches(msg, keys.ViewInNvim):
+			cmd = m.openInDiffViewer()
+			if cmd != nil {
+				cmds = append(cmds, cmd)
+			}
 		}
 
 	case tea.WindowSizeMsg:
@@ -999,6 +1004,87 @@ func (m mainModel) openInEditor() tea.Cmd {
 	return tea.ExecProcess(c, func(err error) tea.Msg {
 		return nil
 	})
+}
+
+func (m mainModel) openInDiffViewer() tea.Cmd {
+	content := m.diffViewer.GetContent()
+	if content == "" {
+		return nil
+	}
+
+	viewer, args := m.resolveDiffViewer()
+	if viewer == "" {
+		log.Warn("no diff viewer found; install nvim or vim, or set ui.diffViewer in config")
+		return nil
+	}
+
+	tmpFile, err := os.CreateTemp("", "git-different-*.ansi")
+	if err != nil {
+		return nil
+	}
+	if _, err := tmpFile.WriteString(content); err != nil {
+		os.Remove(tmpFile.Name())
+		return nil
+	}
+	tmpFile.Close()
+
+	args = append(args, m.diffViewerTerminalArgs(viewer, tmpFile.Name())...)
+	c := exec.Command(viewer, args...)
+	return tea.ExecProcess(c, func(err error) tea.Msg {
+		os.Remove(tmpFile.Name())
+		return nil
+	})
+}
+
+// resolveDiffViewer returns the viewer binary and base args.
+// Returns ("", nil) if no viewer is found.
+func (m mainModel) resolveDiffViewer() (string, []string) {
+	if custom := m.config.UI.DiffViewer; custom != "" {
+		parts := strings.Fields(custom)
+		return parts[0], parts[1:]
+	}
+
+	// Auto-detect: nvim first, then vim.
+	if path, err := exec.LookPath("nvim"); err == nil {
+		return path, nil
+	}
+	if path, err := exec.LookPath("vim"); err == nil {
+		return path, nil
+	}
+	return "", nil
+}
+
+// diffViewerTerminalArgs returns the -c flags to open a terminal buffer
+// for the given viewer and temp file path.
+func (m mainModel) diffViewerTerminalArgs(viewer, tmpPath string) []string {
+	base := filepath.Base(viewer)
+	isNvim := base == "nvim"
+	isVim := base == "vim"
+
+	var args []string
+	if (isNvim || isVim) && m.config.UI.DiffViewerClean {
+		args = append(args, "--clean")
+	}
+	if isNvim || isVim {
+		args = append(args, "-R")
+	}
+
+	switch {
+	case isNvim:
+		args = append(args,
+			"-c", "terminal cat "+tmpPath,
+			"-c", "stopinsert",
+		)
+	case isVim:
+		args = append(args,
+			"-c", "terminal ++curwin cat "+tmpPath,
+			"-c", "normal G",
+		)
+	default:
+		// Custom viewer: just append the temp file path.
+		args = append(args, tmpPath)
+	}
+	return args
 }
 
 // messageViewContent returns the message overlay content (viewport + optional scrollbar).
