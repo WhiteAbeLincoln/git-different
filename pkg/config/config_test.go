@@ -28,6 +28,29 @@ func fakeLookPath(present ...string) func(string) (string, error) {
 	}
 }
 
+var _ = Describe("builtinProfiles", func() {
+	It("contains builtin-delta as a pager profile", func() {
+		p, ok := builtinProfiles["builtin-delta"]
+		Expect(ok).To(BeTrue())
+		Expect(p.Pager).To(Equal("delta --paging=never --true-color=always"))
+		Expect(p.ExternalDiff).To(BeEmpty())
+	})
+
+	It("contains builtin-difftastic as an external diff profile", func() {
+		p, ok := builtinProfiles["builtin-difftastic"]
+		Expect(ok).To(BeTrue())
+		Expect(p.ExternalDiff).To(Equal("difft"))
+		Expect(p.Pager).To(BeEmpty())
+	})
+
+	It("contains builtin-bat as a pager profile", func() {
+		p, ok := builtinProfiles["builtin-bat"]
+		Expect(ok).To(BeTrue())
+		Expect(p.Pager).To(Equal("bat --color=always --language=Diff --style=-header"))
+		Expect(p.ExternalDiff).To(BeEmpty())
+	})
+})
+
 var _ = Describe("ResolveDiffTool", func() {
 	var originalLookPath func(string) (string, error)
 

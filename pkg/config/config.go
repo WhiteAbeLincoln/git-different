@@ -14,6 +14,20 @@ import (
 // stub PATH resolution without mutating the real environment.
 var lookPath = exec.LookPath
 
+// Profile bundles a pager and/or external diff tool into a named preset.
+type Profile struct {
+	Pager        string `yaml:"pager"`
+	ExternalDiff string `yaml:"externalDiff"`
+}
+
+// builtinProfiles are the built-in presets. User-defined profiles cannot use
+// the "builtin-" prefix.
+var builtinProfiles = map[string]Profile{
+	"builtin-delta":      {Pager: "delta --paging=never --true-color=always"},
+	"builtin-difftastic": {ExternalDiff: "difft"},
+	"builtin-bat":        {Pager: "bat --color=always --language=Diff --style=-header"},
+}
+
 type UIConfig struct {
 	Icons           string `yaml:"icons"` // "nerd-fonts-status" (default), "nerd-fonts-simple", "nerd-fonts-filetype", "nerd-fonts-full", "unicode", "ascii"
 	Pager           string `yaml:"pager"`
