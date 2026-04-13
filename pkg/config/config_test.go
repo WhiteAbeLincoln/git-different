@@ -2,6 +2,8 @@ package config
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -204,3 +206,32 @@ var _ = Describe("ResolveProfile", func() {
 		})
 	})
 })
+
+func TestLoadDiffViewerConfig(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("GIT_DIFFERENT_CONFIG_DIR", dir)
+	configPath := filepath.Join(dir, "config.yml")
+	err := os.WriteFile(configPath, []byte(`
+ui:
+  diffViewer: "vim"
+  diffViewerClean: false
+`), 0o644)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := Load()
+	if cfg.UI.DiffViewer != "vim" {
+		t.Fatalf("expected DiffViewer=%q, got %q", "vim", cfg.UI.DiffViewer)
+	}
+	if cfg.UI.DiffViewerClean != false {
+		t.Fatal("expected DiffViewerClean=false")
+	}
+}
+
+func TestDefaultDiffViewerCleanIsTrue(t *testing.T) {
+	cfg := DefaultConfig()
+	if cfg.UI.DiffViewerClean != true {
+		t.Fatal("expected default DiffViewerClean=true")
+	}
+}

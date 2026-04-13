@@ -48,18 +48,20 @@ var builtinProfiles = map[string]builtinProfile{
 var autoDetectOrder = []string{"builtin-delta", "builtin-difftastic", "builtin-bat"}
 
 type UIConfig struct {
+	Profiles        map[string]Profile `yaml:"profiles"`
 	Icons           string             `yaml:"icons"` // "nerd-fonts-status" (default), "nerd-fonts-simple", "nerd-fonts-filetype", "nerd-fonts-full", "unicode", "ascii"
 	ProfileName     string             `yaml:"profile"`
-	Profiles        map[string]Profile `yaml:"profiles"`
 	Pager           string             `yaml:"-"`
 	ExternalDiff    string             `yaml:"-"`
+	DiffViewer      string             `yaml:"diffViewer"` // Command to open for interactive diff viewing (default: auto-detect nvim then vim)
 	FileTreeWidth   int                `yaml:"fileTreeWidth"`
 	SearchTreeWidth int                `yaml:"searchTreeWidth"`
 	HideHeader      bool               `yaml:"hideHeader"`
 	HideFooter      bool               `yaml:"hideFooter"`
 	ShowFileTree    bool               `yaml:"showFileTree"`
-	ColorFileNames  bool               `yaml:"colorFileNames"` // Color filenames by git status (default: true)
-	ShowDiffStats   bool               `yaml:"showDiffStats"`  // Show the amount of lines added / removed next to the file
+	ColorFileNames  bool               `yaml:"colorFileNames"`  // Color filenames by git status (default: true)
+	ShowDiffStats   bool               `yaml:"showDiffStats"`   // Show the amount of lines added / removed next to the file
+	DiffViewerClean bool               `yaml:"diffViewerClean"` // Pass --clean to the diff viewer (default: true)
 }
 
 type WatchConfig struct {
@@ -69,8 +71,8 @@ type WatchConfig struct {
 }
 
 type Config struct {
-	Watch WatchConfig `yaml:"-"`
 	UI    UIConfig    `yaml:"ui"`
+	Watch WatchConfig `yaml:"-"`
 }
 
 func DefaultConfig() Config {
@@ -84,6 +86,7 @@ func DefaultConfig() Config {
 			Icons:           "nerd-fonts-status",
 			ColorFileNames:  true,
 			ShowDiffStats:   true,
+			DiffViewerClean: true,
 		},
 	}
 }
