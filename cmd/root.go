@@ -70,6 +70,7 @@ func Execute() {
 func init() {
 	rootCmd.Flags().String("pager", "", "Pager command (overrides config)")
 	rootCmd.Flags().String("external-diff", "", "External diff tool (overrides config)")
+	rootCmd.Flags().String("profile", "", "Diff tool profile (overrides config)")
 
 	rootCmd.Flags().
 		BoolP("watch", "w", false, "Watch mode: periodically re-run git diff and refresh")
@@ -85,6 +86,10 @@ func init() {
 		externalDiffFlag, err := cmd.Flags().GetString("external-diff")
 		if err != nil {
 			log.Fatal("Cannot parse the external-diff flag", err)
+		}
+		profileFlag, err := cmd.Flags().GetString("profile")
+		if err != nil {
+			log.Fatal("Cannot parse the profile flag", err)
 		}
 
 		watchFlag, err := cmd.Flags().GetBool("watch")
@@ -160,6 +165,9 @@ func init() {
 		}
 		if externalDiffFlag != "" {
 			cfg.UI.ExternalDiff = externalDiffFlag
+		}
+		if profileFlag != "" {
+			cfg.UI.ProfileName = profileFlag
 		}
 
 		// Resolve the active profile (CLI flags > named profile > PATH auto-detect).
