@@ -141,6 +141,23 @@ func LogPreamble(repoDir string, args []string) (string, error) {
 	return out, nil
 }
 
+// FileLogPreamble runs "git log -1 --format=fuller --decorate <range-args> -- <filepath>"
+// and returns the preamble for the most recent commit in the range that touched
+// the given file. Returns empty string if no commit in the range modified the file.
+func FileLogPreamble(repoDir string, args []string, filepath string) (string, error) {
+	logArgs := diffArgsToLogArgs(args)
+	cmdArgs := slices.Concat(
+		[]string{"log", "-1", "--format=fuller", "--decorate"},
+		logArgs,
+		[]string{"--", filepath},
+	)
+	out, err := runGit(repoDir, cmdArgs)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(out), nil
+}
+
 // CommitPreamble runs "git show --format=fuller --decorate --no-patch <hash>"
 // and returns the commit metadata for a single commit.
 func CommitPreamble(repoDir string, hash string) (string, error) {

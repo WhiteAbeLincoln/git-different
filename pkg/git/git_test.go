@@ -214,6 +214,49 @@ var _ = Describe("LogPreamble", func() {
 	})
 })
 
+var _ = Describe("FileLogPreamble", func() {
+	It("returns preamble for the most recent commit touching the file in range", func() {
+		repo := initRepo()
+		writeFile(repo, "a.txt", "a\n")
+		run(repo, "git", "add", ".")
+		run(repo, "git", "commit", "-m", "add a")
+		writeFile(repo, "b.txt", "b\n")
+		run(repo, "git", "add", ".")
+		run(repo, "git", "commit", "-m", "add b")
+
+		out, err := git.FileLogPreamble(repo, []string{"HEAD~2..HEAD"}, "a.txt")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(out).To(ContainSubstring("Author:"))
+		Expect(out).To(ContainSubstring("add a"))
+		Expect(out).NotTo(ContainSubstring("add b"))
+	})
+
+	It("returns empty string when no commit in range touches the file", func() {
+		repo := initRepo()
+		writeFile(repo, "a.txt", "a\n")
+		run(repo, "git", "add", ".")
+		run(repo, "git", "commit", "-m", "add a")
+		writeFile(repo, "b.txt", "b\n")
+		run(repo, "git", "add", ".")
+		run(repo, "git", "commit", "-m", "add b")
+
+		out, err := git.FileLogPreamble(repo, []string{"HEAD~1..HEAD"}, "a.txt")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(out).To(BeEmpty())
+	})
+
+	It("converts single ref to range", func() {
+		repo := initRepo()
+		writeFile(repo, "a.txt", "a\n")
+		run(repo, "git", "add", ".")
+		run(repo, "git", "commit", "-m", "add a")
+
+		out, err := git.FileLogPreamble(repo, []string{"HEAD~1"}, "a.txt")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(out).To(ContainSubstring("add a"))
+	})
+})
+
 var _ = Describe("CommitPreamble", func() {
 	It("returns fuller info for a single commit", func() {
 		repo := initRepo()
