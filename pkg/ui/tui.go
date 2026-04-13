@@ -352,7 +352,7 @@ func (m mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.fileTree = m.fileTree.SetFiles(m.files)
 		m.preamble = strings.TrimSpace(msg.preamble)
 		m.commitBranch = msg.branch
-		m.cachedMeta = m.parseCommitMeta()
+		m.cachedMeta = parseCommitMeta(m.preamble)
 		m.diffViewer.SetPreamble(m.preamble)
 		m, cmd = m.setNodeDiff(m.fileTree.GetCurrNode())
 		cmds = append(cmds, cmd)
@@ -659,12 +659,12 @@ type commitMeta struct {
 	author string
 }
 
-func (m mainModel) parseCommitMeta() commitMeta {
+func parseCommitMeta(preamble string) commitMeta {
 	var meta commitMeta
-	if m.preamble == "" {
+	if preamble == "" {
 		return meta
 	}
-	for line := range strings.SplitSeq(m.preamble, "\n") {
+	for line := range strings.SplitSeq(preamble, "\n") {
 		trimmed := strings.TrimSpace(line)
 		if strings.HasPrefix(trimmed, "commit ") && meta.hash == "" {
 			h := strings.TrimPrefix(trimmed, "commit ")
@@ -711,11 +711,11 @@ func (m mainModel) parseCommitMeta() commitMeta {
 	return meta
 }
 
-func (m mainModel) commitSubject() string {
-	if m.preamble == "" {
+func commitSubject(preamble string) string {
+	if preamble == "" {
 		return ""
 	}
-	for line := range strings.SplitSeq(m.preamble, "\n") {
+	for line := range strings.SplitSeq(preamble, "\n") {
 		trimmed := strings.TrimSpace(line)
 		if trimmed == "" {
 			continue
@@ -785,7 +785,7 @@ func (m mainModel) viewHeader() string {
 		}
 
 		// Commit subject.
-		subject := m.commitSubject()
+		subject := commitSubject(m.preamble)
 		if subject != "" {
 			maxSubjectWidth := m.width - lipgloss.Width(headerParts) - 2
 			if maxSubjectWidth > 0 {
