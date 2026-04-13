@@ -18,6 +18,7 @@ type KeyMap struct {
 	Copy             key.Binding
 	SwitchPanel      key.Binding
 	OpenInEditor     key.Binding
+	ViewInNvim       key.Binding
 	ToggleCommitView key.Binding
 	ToggleIconStyle  key.Binding
 	ToggleHelp       key.Binding
@@ -85,6 +86,10 @@ var keys = &KeyMap{
 		key.WithKeys("o"),
 		key.WithHelp("o", "open"),
 	),
+	ViewInNvim: key.NewBinding(
+		key.WithKeys("v"),
+		key.WithHelp("v", "view in nvim"),
+	),
 	ToggleCommitView: key.NewBinding(
 		key.WithKeys("c"),
 		key.WithHelp("c", "toggle commit view"),
@@ -117,6 +122,7 @@ func KeyGroups() [][]key.Binding {
 		keys.Search,
 		keys.Copy,
 		keys.OpenInEditor,
+		keys.ViewInNvim,
 		keys.ToggleCommitView,
 		keys.ToggleIconStyle,
 	}, {
