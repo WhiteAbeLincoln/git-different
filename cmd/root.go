@@ -74,6 +74,10 @@ func init() {
 		String("profile", "", "Diff tool profile name (builtin-delta, builtin-difftastic, builtin-bat, or custom)")
 
 	rootCmd.Flags().
+		String("diff-viewer", "", "Command to open rendered diffs for selection (default: nvim or vim)")
+	rootCmd.Flags().Bool("no-clean", false, "Load user nvim/vim config when opening diff viewer")
+
+	rootCmd.Flags().
 		BoolP("watch", "w", false, "Watch mode: periodically re-run git diff and refresh")
 	rootCmd.Flags().Duration("watch-interval", 2*time.Second, "Interval between watch refreshes")
 
@@ -91,6 +95,14 @@ func init() {
 		profileFlag, err := cmd.Flags().GetString("profile")
 		if err != nil {
 			log.Fatal("Cannot parse the profile flag", err)
+		}
+		diffViewerFlag, err := cmd.Flags().GetString("diff-viewer")
+		if err != nil {
+			log.Fatal("Cannot parse the diff-viewer flag", err)
+		}
+		noCleanFlag, err := cmd.Flags().GetBool("no-clean")
+		if err != nil {
+			log.Fatal("Cannot parse the no-clean flag", err)
 		}
 
 		watchFlag, err := cmd.Flags().GetBool("watch")
@@ -169,6 +181,12 @@ func init() {
 		}
 		if profileFlag != "" {
 			cfg.UI.ProfileName = profileFlag
+		}
+		if diffViewerFlag != "" {
+			cfg.UI.DiffViewer = diffViewerFlag
+		}
+		if noCleanFlag {
+			cfg.UI.DiffViewerClean = false
 		}
 
 		// Resolve the active profile (CLI flags > named profile > PATH auto-detect).
