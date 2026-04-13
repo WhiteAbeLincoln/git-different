@@ -66,12 +66,15 @@ const (
 
 type mainModel struct {
 	commitPreambles   map[string]string
+	fileCommitCache   map[string]string
 	cachedMeta        commitMeta
 	repoRoot          string
 	lastDiffOutput    string
 	iconStyle         string
 	preamble          string
 	commitBranch      string
+	headerPreamble    string
+	headerBranch      string
 	pendingCursorPath string
 	gitArgs           []string
 	commits           []gitpkg.Commit
@@ -353,6 +356,10 @@ func (m mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.preamble = strings.TrimSpace(msg.preamble)
 		m.commitBranch = msg.branch
 		m.cachedMeta = parseCommitMeta(m.preamble)
+		m.headerPreamble = m.preamble
+		m.headerBranch = m.commitBranch
+		m.fileCommitCache = nil
+		m.commitPreambles = nil
 		m.diffViewer.SetPreamble(m.preamble)
 		m, cmd = m.setNodeDiff(m.fileTree.GetCurrNode())
 		cmds = append(cmds, cmd)
@@ -776,16 +783,16 @@ func (m mainModel) viewHeader() string {
 		headerParts = headerParts + sep + strings.Join(infoParts, sep)
 
 		// Branch ref.
-		if m.commitBranch != "" {
-			branchLabel := "[" + m.commitBranch + "]"
+		if m.headerBranch != "" {
+			branchLabel := "[" + m.headerBranch + "]"
 			if m.iconStyle != filenode.IconsASCII && m.iconStyle != filenode.IconsUnicode {
-				branchLabel = string(md.SourceBranch) + " " + m.commitBranch
+				branchLabel = string(md.SourceBranch) + " " + m.headerBranch
 			}
 			headerParts = headerParts + sep + refStyle.Render(branchLabel)
 		}
 
 		// Commit subject.
-		subject := commitSubject(m.preamble)
+		subject := commitSubject(m.headerPreamble)
 		if subject != "" {
 			maxSubjectWidth := m.width - lipgloss.Width(headerParts) - 2
 			if maxSubjectWidth > 0 {
