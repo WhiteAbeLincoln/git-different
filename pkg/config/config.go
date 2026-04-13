@@ -22,13 +22,30 @@ type Profile struct {
 	ExternalDiff string `yaml:"externalDiff"`
 }
 
+// builtinProfile pairs a Profile with the binary name used for PATH detection.
+type builtinProfile struct {
+	Profile
+	bin string
+}
+
 // builtinProfiles are the built-in presets. User-defined profiles cannot use
 // the "builtin-" prefix.
-var builtinProfiles = map[string]Profile{
-	"builtin-delta":      {Pager: "delta --paging=never --true-color=always"},
-	"builtin-difftastic": {ExternalDiff: "difft"},
-	"builtin-bat":        {Pager: "bat --color=always --language=Diff --style=-header"},
+var builtinProfiles = map[string]builtinProfile{
+	"builtin-delta": {
+		Profile: Profile{Pager: "delta --paging=never --true-color=always"},
+		bin:     "delta",
+	},
+	"builtin-difftastic": {Profile: Profile{ExternalDiff: "difft"}, bin: "difft"},
+	"builtin-bat": {
+		Profile: Profile{Pager: "bat --color=always --language=Diff --style=-header"},
+		bin:     "bat",
+	},
 }
+
+// autoDetectOrder controls which built-in profiles are tried (and in what
+// order) when no profile is explicitly selected. delta is preferred over
+// difftastic because it preserves syntax highlighting.
+var autoDetectOrder = []string{"builtin-delta", "builtin-difftastic", "builtin-bat"}
 
 type UIConfig struct {
 	Icons           string             `yaml:"icons"` // "nerd-fonts-status" (default), "nerd-fonts-simple", "nerd-fonts-filetype", "nerd-fonts-full", "unicode", "ascii"
@@ -100,17 +117,13 @@ func ResolveProfile(cfg Config) (Config, error) {
 	}
 
 	// 3. Auto-detect from PATH.
-	if _, err := lookPath("delta"); err == nil {
-		cfg.UI.Pager = "delta --paging=never --true-color=always"
-		return cfg, nil
-	}
-	if _, err := lookPath("difft"); err == nil {
-		cfg.UI.ExternalDiff = "difft"
-		return cfg, nil
-	}
-	if _, err := lookPath("bat"); err == nil {
-		cfg.UI.Pager = "bat --color=always --language=Diff --style=-header"
-		return cfg, nil
+	for _, name := range autoDetectOrder {
+		p := builtinProfiles[name]
+		if _, err := lookPath(p.bin); err == nil {
+			cfg.UI.Pager = p.Pager
+			cfg.UI.ExternalDiff = p.ExternalDiff
+			return cfg, nil
+		}
 	}
 	return cfg, nil
 }

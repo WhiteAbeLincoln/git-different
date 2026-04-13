@@ -70,7 +70,8 @@ func Execute() {
 func init() {
 	rootCmd.Flags().String("pager", "", "Pager command (overrides config)")
 	rootCmd.Flags().String("external-diff", "", "External diff tool (overrides config)")
-	rootCmd.Flags().String("profile", "", "Diff tool profile (overrides config)")
+	rootCmd.Flags().
+		String("profile", "", "Diff tool profile name (builtin-delta, builtin-difftastic, builtin-bat, or custom)")
 
 	rootCmd.Flags().
 		BoolP("watch", "w", false, "Watch mode: periodically re-run git diff and refresh")
