@@ -1,10 +1,12 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -146,6 +148,17 @@ func getConfigFilePath() string {
 	return ""
 }
 
+// validate checks that user-defined profile names don't collide with the
+// reserved "builtin-" namespace.
+func (c Config) validate() error {
+	for name := range c.UI.Profiles {
+		if strings.HasPrefix(name, "builtin-") {
+			return fmt.Errorf("profile name %q uses reserved prefix \"builtin-\"", name)
+		}
+	}
+	return nil
+}
+
 func Load() Config {
 	cfg := DefaultConfig()
 
@@ -160,6 +173,10 @@ func Load() Config {
 	}
 
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		return DefaultConfig()
+	}
+
+	if err := cfg.validate(); err != nil {
 		return DefaultConfig()
 	}
 

@@ -6,6 +6,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"gopkg.in/yaml.v3"
 )
 
 func TestConfig(t *testing.T) {
@@ -48,6 +49,39 @@ var _ = Describe("builtinProfiles", func() {
 		Expect(ok).To(BeTrue())
 		Expect(p.Pager).To(Equal("bat --color=always --language=Diff --style=-header"))
 		Expect(p.ExternalDiff).To(BeEmpty())
+	})
+})
+
+var _ = Describe("Load", func() {
+	It("rejects user-defined profiles with builtin- prefix", func() {
+		yamlData := []byte(`
+ui:
+  profiles:
+    builtin-mine:
+      pager: "delta"
+`)
+		var cfg Config
+		err := yaml.Unmarshal(yamlData, &cfg)
+		Expect(err).NotTo(HaveOccurred())
+
+		err = cfg.validate()
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("builtin-"))
+	})
+
+	It("accepts user-defined profiles without builtin- prefix", func() {
+		yamlData := []byte(`
+ui:
+  profiles:
+    my-delta:
+      pager: "delta --side-by-side"
+`)
+		var cfg Config
+		err := yaml.Unmarshal(yamlData, &cfg)
+		Expect(err).NotTo(HaveOccurred())
+
+		err = cfg.validate()
+		Expect(err).NotTo(HaveOccurred())
 	})
 })
 
