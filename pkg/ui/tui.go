@@ -1075,18 +1075,13 @@ func (m mainModel) diffViewerTerminalArgs(viewer, tmpPath string) []string {
 
 	switch {
 	case isNvim:
-		// Use termopen() list form to avoid shell interpretation of the path.
-		args = append(
-			args,
-			"-c",
-			fmt.Sprintf("call termopen(['cat', '%s'])", strings.ReplaceAll(tmpPath, "'", "''")),
-			"-c",
-			"stopinsert",
+		args = append(args,
+			"-c", "terminal cat "+shellescape(tmpPath),
+			"-c", "stopinsert",
 		)
 	case isVim:
-		// Use fnameescape() to safely quote the path for :terminal.
 		args = append(args,
-			"-c", fmt.Sprintf("terminal ++curwin cat %s", shellescape(tmpPath)),
+			"-c", "terminal ++curwin cat "+shellescape(tmpPath),
 			"-c", "normal G",
 		)
 	default:
