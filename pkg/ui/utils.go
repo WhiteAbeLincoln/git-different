@@ -44,6 +44,11 @@ func sortFiles(files []*gitdiff.File) {
 	})
 }
 
+// shellescape wraps s in single quotes with proper escaping for POSIX shells.
+func shellescape(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'"
+}
+
 func relativeTime(t time.Time) string {
 	d := time.Since(t)
 	switch {

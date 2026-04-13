@@ -71,8 +71,8 @@ type WatchConfig struct {
 }
 
 type Config struct {
-	UI    UIConfig    `yaml:"ui"`
 	Watch WatchConfig `yaml:"-"`
+	UI    UIConfig    `yaml:"ui"`
 }
 
 func DefaultConfig() Config {

@@ -1020,9 +1020,11 @@ func (m mainModel) openInDiffViewer() tea.Cmd {
 
 	tmpFile, err := os.CreateTemp("", "git-different-*.ansi")
 	if err != nil {
+		log.Error("failed to create temp file for diff viewer", "err", err)
 		return nil
 	}
 	if _, err := tmpFile.WriteString(content); err != nil {
+		log.Error("failed to write diff content to temp file", "err", err)
 		os.Remove(tmpFile.Name())
 		return nil
 	}
@@ -1041,7 +1043,9 @@ func (m mainModel) openInDiffViewer() tea.Cmd {
 func (m mainModel) resolveDiffViewer() (string, []string) {
 	if custom := m.config.UI.DiffViewer; custom != "" {
 		parts := strings.Fields(custom)
-		return parts[0], parts[1:]
+		if len(parts) > 0 {
+			return parts[0], parts[1:]
+		}
 	}
 
 	// Auto-detect: nvim first, then vim.
@@ -1071,13 +1075,18 @@ func (m mainModel) diffViewerTerminalArgs(viewer, tmpPath string) []string {
 
 	switch {
 	case isNvim:
-		args = append(args,
-			"-c", "terminal cat "+tmpPath,
-			"-c", "stopinsert",
+		// Use termopen() list form to avoid shell interpretation of the path.
+		args = append(
+			args,
+			"-c",
+			fmt.Sprintf("call termopen(['cat', '%s'])", strings.ReplaceAll(tmpPath, "'", "''")),
+			"-c",
+			"stopinsert",
 		)
 	case isVim:
+		// Use fnameescape() to safely quote the path for :terminal.
 		args = append(args,
-			"-c", "terminal ++curwin cat "+tmpPath,
+			"-c", fmt.Sprintf("terminal ++curwin cat %s", shellescape(tmpPath)),
 			"-c", "normal G",
 		)
 	default:
