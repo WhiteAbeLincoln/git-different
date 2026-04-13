@@ -65,8 +65,8 @@ const (
 )
 
 type mainModel struct {
-	commitPreambles   map[string]string
-	fileCommitCache   map[string]string
+	commitPreambles   map[string]cachedPreamble
+	fileCommitCache   map[string]cachedPreamble
 	cachedMeta        commitMeta
 	repoRoot          string
 	lastDiffOutput    string
@@ -376,16 +376,17 @@ func (m mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case fileCommitInfoMsg:
 		// Cache the result.
+		cached := cachedPreamble{preamble: msg.preamble, branch: msg.branch}
 		if msg.commitView {
 			if m.commitPreambles == nil {
-				m.commitPreambles = make(map[string]string)
+				m.commitPreambles = make(map[string]cachedPreamble)
 			}
-			m.commitPreambles[msg.key] = msg.preamble
+			m.commitPreambles[msg.key] = cached
 		} else {
 			if m.fileCommitCache == nil {
-				m.fileCommitCache = make(map[string]string)
+				m.fileCommitCache = make(map[string]cachedPreamble)
 			}
-			m.fileCommitCache[msg.key] = msg.preamble
+			m.fileCommitCache[msg.key] = cached
 		}
 
 		// Only update header if the user is still viewing the relevant node.
@@ -702,6 +703,11 @@ func resolveBranch(preamble string) string {
 	return ""
 }
 
+type cachedPreamble struct {
+	preamble string
+	branch   string
+}
+
 type commitMeta struct {
 	hash   string
 	date   string
@@ -908,7 +914,7 @@ func (m *mainModel) activePreamble() string {
 		return m.preamble
 	}
 	if cached, ok := m.commitPreambles[hash]; ok {
-		return cached
+		return cached.preamble
 	}
 	// Fetch and cache on first access.
 	info, err := gitpkg.CommitPreamble(m.repoRoot, hash)
@@ -917,9 +923,9 @@ func (m *mainModel) activePreamble() string {
 	}
 	info = strings.TrimSpace(info)
 	if m.commitPreambles == nil {
-		m.commitPreambles = make(map[string]string)
+		m.commitPreambles = make(map[string]cachedPreamble)
 	}
-	m.commitPreambles[hash] = info
+	m.commitPreambles[hash] = cachedPreamble{preamble: info, branch: resolveBranch(info)}
 	return info
 }
 
@@ -1497,6 +1503,7 @@ func (m mainModel) setNodeDiff(node *tree.Node) (mainModel, tea.Cmd) {
 		additions, deletions := filenode.DiffStats(val.File)
 		m.diffViewer.SetFileHeader(fname, additions, deletions)
 
+		// In commit-segmented mode, diff within the specific commit
 		args := m.diffArgsForFile(fname)
 
 		// Update header to reflect the commit that last touched this file.
@@ -1504,14 +1511,14 @@ func (m mainModel) setNodeDiff(node *tree.Node) (mainModel, tea.Cmd) {
 		if m.commitView {
 			if hash := m.fileTree.AncestorCommitHash(); hash != "" {
 				if cached, ok := m.commitPreambles[hash]; ok {
-					m.setHeaderFromPreamble(cached, resolveBranch(cached))
+					m.setHeaderFromPreamble(cached.preamble, cached.branch)
 				} else {
 					headerCmd = m.fetchCommitHeaderInfo(hash)
 				}
 			}
 		} else if gitpkg.HasRefs(m.gitArgs) {
 			if cached, ok := m.fileCommitCache[fname]; ok {
-				m.setHeaderFromPreamble(cached, resolveBranch(cached))
+				m.setHeaderFromPreamble(cached.preamble, cached.branch)
 			} else {
 				headerCmd = m.fetchFileCommitInfo(fname)
 			}
@@ -1520,6 +1527,7 @@ func (m mainModel) setNodeDiff(node *tree.Node) (mainModel, tea.Cmd) {
 		return m, tea.Batch(m.renderDiff(args), headerCmd)
 
 	case *dirnode.CommitNode:
+		// Show all changes in this commit
 		files := m.fileTree.GetCurrNodeDesendantDiffs()
 		var added, deleted int64
 		for _, file := range files {
@@ -1534,7 +1542,7 @@ func (m mainModel) setNodeDiff(node *tree.Node) (mainModel, tea.Cmd) {
 		// Update header to reflect this commit.
 		var headerCmd tea.Cmd
 		if cached, ok := m.commitPreambles[val.Hash]; ok {
-			m.setHeaderFromPreamble(cached, resolveBranch(cached))
+			m.setHeaderFromPreamble(cached.preamble, cached.branch)
 		} else {
 			headerCmd = m.fetchCommitHeaderInfo(val.Hash)
 		}
@@ -1562,7 +1570,7 @@ func (m mainModel) setNodeDiff(node *tree.Node) (mainModel, tea.Cmd) {
 			if hash := m.fileTree.AncestorCommitHash(); hash != "" {
 				baseArgs = []string{hash + "~1.." + hash}
 				if cached, ok := m.commitPreambles[hash]; ok {
-					m.setHeaderFromPreamble(cached, resolveBranch(cached))
+					m.setHeaderFromPreamble(cached.preamble, cached.branch)
 				} else {
 					headerCmd = m.fetchCommitHeaderInfo(hash)
 				}
