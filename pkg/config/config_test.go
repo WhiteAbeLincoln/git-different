@@ -85,7 +85,7 @@ ui:
 	})
 })
 
-var _ = Describe("ResolveDiffTool", func() {
+var _ = Describe("ResolveProfile", func() {
 	var originalLookPath func(string) (string, error)
 
 	BeforeEach(func() {
@@ -96,27 +96,30 @@ var _ = Describe("ResolveDiffTool", func() {
 		lookPath = originalLookPath
 	})
 
-	Context("when neither tool is configured", func() {
-		It("prefers difftastic when available", func() {
+	Context("auto-detect when no profile is selected", func() {
+		It("prefers delta over difftastic when both are available", func() {
 			lookPath = fakeLookPath("difft", "delta")
 
-			got := ResolveDiffTool(DefaultConfig())
+			got, err := ResolveProfile(DefaultConfig())
+			Expect(err).NotTo(HaveOccurred())
+			Expect(got.UI.Pager).To(Equal("delta --paging=never --true-color=always"))
+			Expect(got.UI.ExternalDiff).To(BeEmpty())
+		})
+
+		It("falls back to difftastic when delta is missing", func() {
+			lookPath = fakeLookPath("difft", "bat")
+
+			got, err := ResolveProfile(DefaultConfig())
+			Expect(err).NotTo(HaveOccurred())
 			Expect(got.UI.ExternalDiff).To(Equal("difft"))
 			Expect(got.UI.Pager).To(BeEmpty())
 		})
 
-		It("falls back to delta when difftastic is missing", func() {
-			lookPath = fakeLookPath("delta", "bat")
-
-			got := ResolveDiffTool(DefaultConfig())
-			Expect(got.UI.ExternalDiff).To(BeEmpty())
-			Expect(got.UI.Pager).To(Equal("delta --paging=never --true-color=always"))
-		})
-
-		It("falls back to bat when difftastic and delta are missing", func() {
+		It("falls back to bat when delta and difftastic are missing", func() {
 			lookPath = fakeLookPath("bat")
 
-			got := ResolveDiffTool(DefaultConfig())
+			got, err := ResolveProfile(DefaultConfig())
+			Expect(err).NotTo(HaveOccurred())
 			Expect(got.UI.ExternalDiff).To(BeEmpty())
 			Expect(got.UI.Pager).To(Equal("bat --color=always --language=Diff --style=-header"))
 		})
@@ -124,31 +127,78 @@ var _ = Describe("ResolveDiffTool", func() {
 		It("leaves both empty when none of the tools are on PATH", func() {
 			lookPath = fakeLookPath()
 
-			got := ResolveDiffTool(DefaultConfig())
+			got, err := ResolveProfile(DefaultConfig())
+			Expect(err).NotTo(HaveOccurred())
 			Expect(got.UI.ExternalDiff).To(BeEmpty())
 			Expect(got.UI.Pager).To(BeEmpty())
 		})
 	})
 
-	Context("when the user has configured a tool", func() {
-		It("respects an explicit pager even when difftastic is on PATH", func() {
-			lookPath = fakeLookPath("difft", "delta")
-
+	Context("when a profile is selected", func() {
+		It("resolves a user-defined profile by name", func() {
 			cfg := DefaultConfig()
+			cfg.UI.ProfileName = "my-delta"
+			cfg.UI.Profiles = map[string]Profile{
+				"my-delta": {Pager: "delta --side-by-side --paging=never"},
+			}
+
+			got, err := ResolveProfile(cfg)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(got.UI.Pager).To(Equal("delta --side-by-side --paging=never"))
+			Expect(got.UI.ExternalDiff).To(BeEmpty())
+		})
+
+		It("resolves a built-in profile by name", func() {
+			cfg := DefaultConfig()
+			cfg.UI.ProfileName = "builtin-difftastic"
+
+			got, err := ResolveProfile(cfg)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(got.UI.ExternalDiff).To(Equal("difft"))
+			Expect(got.UI.Pager).To(BeEmpty())
+		})
+
+		It("prefers user-defined profile over built-in with same name", func() {
+			cfg := DefaultConfig()
+			cfg.UI.ProfileName = "custom"
+			cfg.UI.Profiles = map[string]Profile{
+				"custom": {Pager: "my-custom-pager"},
+			}
+
+			got, err := ResolveProfile(cfg)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(got.UI.Pager).To(Equal("my-custom-pager"))
+		})
+
+		It("returns an error for a nonexistent profile name", func() {
+			cfg := DefaultConfig()
+			cfg.UI.ProfileName = "does-not-exist"
+
+			_, err := ResolveProfile(cfg)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("does-not-exist"))
+		})
+	})
+
+	Context("when CLI flags override", func() {
+		It("uses CLI pager even when a profile is selected", func() {
+			cfg := DefaultConfig()
+			cfg.UI.ProfileName = "builtin-difftastic"
 			cfg.UI.Pager = "bat --style=plain"
 
-			got := ResolveDiffTool(cfg)
+			got, err := ResolveProfile(cfg)
+			Expect(err).NotTo(HaveOccurred())
 			Expect(got.UI.Pager).To(Equal("bat --style=plain"))
 			Expect(got.UI.ExternalDiff).To(BeEmpty())
 		})
 
-		It("respects an explicit external diff even when delta is on PATH", func() {
-			lookPath = fakeLookPath("delta")
-
+		It("uses CLI external diff even when a profile is selected", func() {
 			cfg := DefaultConfig()
+			cfg.UI.ProfileName = "builtin-delta"
 			cfg.UI.ExternalDiff = "difft --display=inline"
 
-			got := ResolveDiffTool(cfg)
+			got, err := ResolveProfile(cfg)
+			Expect(err).NotTo(HaveOccurred())
 			Expect(got.UI.ExternalDiff).To(Equal("difft --display=inline"))
 			Expect(got.UI.Pager).To(BeEmpty())
 		})

@@ -71,39 +71,48 @@ func DefaultConfig() Config {
 	}
 }
 
-// ResolveDiffTool fills in a default pager/externalDiff when the user hasn't
-// configured either. The priority is difftastic, then delta, then bat, then
-// git's raw unified-diff output. If either field is already set (via config
-// or CLI flag) the config is returned unchanged.
+// ResolveProfile populates the runtime Pager and ExternalDiff fields on
+// UIConfig. Resolution order:
 //
-// The bat default disables bat's own file header via "--style=-header"
-// because git-different already renders a file header above the diff
-// viewport.
-//
-// The delta default forces "--true-color=always". Delta's auto-detection
-// reads COLORTERM but also gates on stdout being a TTY, and when delta is
-// launched as a subprocess of the TUI its stdout is a pipe — so auto ends
-// up downgrading to 8-bit color even when COLORTERM=truecolor is inherited
-// correctly.
-func ResolveDiffTool(cfg Config) Config {
+//  1. CLI flags (Pager/ExternalDiff already set on cfg) — returned as-is.
+//  2. Named profile (cfg.UI.ProfileName) — looked up in user-defined
+//     profiles first, then built-in profiles.
+//  3. Auto-detect from PATH: delta > difftastic > bat > raw git diff.
+func ResolveProfile(cfg Config) (Config, error) {
+	// 1. CLI flags take highest priority.
 	if cfg.UI.Pager != "" || cfg.UI.ExternalDiff != "" {
-		return cfg
+		return cfg, nil
+	}
+
+	// 2. Named profile.
+	if cfg.UI.ProfileName != "" {
+		if p, ok := cfg.UI.Profiles[cfg.UI.ProfileName]; ok {
+			cfg.UI.Pager = p.Pager
+			cfg.UI.ExternalDiff = p.ExternalDiff
+			return cfg, nil
+		}
+		if p, ok := builtinProfiles[cfg.UI.ProfileName]; ok {
+			cfg.UI.Pager = p.Pager
+			cfg.UI.ExternalDiff = p.ExternalDiff
+			return cfg, nil
+		}
+		return cfg, fmt.Errorf("unknown profile %q", cfg.UI.ProfileName)
+	}
+
+	// 3. Auto-detect from PATH.
+	if _, err := lookPath("delta"); err == nil {
+		cfg.UI.Pager = "delta --paging=never --true-color=always"
+		return cfg, nil
 	}
 	if _, err := lookPath("difft"); err == nil {
 		cfg.UI.ExternalDiff = "difft"
-		return cfg
-	}
-	if _, err := lookPath("delta"); err == nil {
-		cfg.UI.Pager = "delta --paging=never --true-color=always"
-		return cfg
+		return cfg, nil
 	}
 	if _, err := lookPath("bat"); err == nil {
 		cfg.UI.Pager = "bat --color=always --language=Diff --style=-header"
-		return cfg
+		return cfg, nil
 	}
-	// None of the tools are on PATH — leave both empty so PipeToPager
-	// falls through to returning raw "git diff" output.
-	return cfg
+	return cfg, nil
 }
 
 func getConfigFilePath() string {
