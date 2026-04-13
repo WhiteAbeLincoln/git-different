@@ -29,16 +29,18 @@ var builtinProfiles = map[string]Profile{
 }
 
 type UIConfig struct {
-	Icons           string `yaml:"icons"` // "nerd-fonts-status" (default), "nerd-fonts-simple", "nerd-fonts-filetype", "nerd-fonts-full", "unicode", "ascii"
-	Pager           string `yaml:"pager"`
-	ExternalDiff    string `yaml:"externalDiff"`
-	FileTreeWidth   int    `yaml:"fileTreeWidth"`
-	SearchTreeWidth int    `yaml:"searchTreeWidth"`
-	HideHeader      bool   `yaml:"hideHeader"`
-	HideFooter      bool   `yaml:"hideFooter"`
-	ShowFileTree    bool   `yaml:"showFileTree"`
-	ColorFileNames  bool   `yaml:"colorFileNames"` // Color filenames by git status (default: true)
-	ShowDiffStats   bool   `yaml:"showDiffStats"`  // Show the amount of lines added / removed next to the file
+	Icons           string             `yaml:"icons"` // "nerd-fonts-status" (default), "nerd-fonts-simple", "nerd-fonts-filetype", "nerd-fonts-full", "unicode", "ascii"
+	ProfileName     string             `yaml:"profile"`
+	Profiles        map[string]Profile `yaml:"profiles"`
+	Pager           string             `yaml:"-"`
+	ExternalDiff    string             `yaml:"-"`
+	FileTreeWidth   int                `yaml:"fileTreeWidth"`
+	SearchTreeWidth int                `yaml:"searchTreeWidth"`
+	HideHeader      bool               `yaml:"hideHeader"`
+	HideFooter      bool               `yaml:"hideFooter"`
+	ShowFileTree    bool               `yaml:"showFileTree"`
+	ColorFileNames  bool               `yaml:"colorFileNames"` // Color filenames by git status (default: true)
+	ShowDiffStats   bool               `yaml:"showDiffStats"`  // Show the amount of lines added / removed next to the file
 }
 
 type WatchConfig struct {
@@ -63,8 +65,6 @@ func DefaultConfig() Config {
 			Icons:           "nerd-fonts-status",
 			ColorFileNames:  true,
 			ShowDiffStats:   true,
-			Pager:           "",
-			ExternalDiff:    "",
 		},
 	}
 }
